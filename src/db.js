@@ -45,6 +45,20 @@ try {
   // Column already exists
 }
 
+// Migration: add extract_subtitles column (default false)
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN extract_subtitles INTEGER NOT NULL DEFAULT 0`);
+} catch {
+  // Column already exists
+}
+
+// Migration: add job_dir column (folder name on disk, falls back to job id)
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN job_dir TEXT`);
+} catch {
+  // Column already exists
+}
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
   CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);

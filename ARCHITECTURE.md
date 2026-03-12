@@ -130,6 +130,8 @@ Single `jobs` table:
 | `subtitle_path` | TEXT | Path to generated subtitle file |
 | `download_method` | TEXT | `yt-dlp` or `playwright` |
 | `status_message` | TEXT | Detailed phase description (e.g. "Transcribing with whisper...") |
+| `extract_subtitles` | INTEGER | Whether to run Whisper (0=no, 1=yes, default 0) |
+| `job_dir` | TEXT | Folder name on disk (e.g. `Video Title_abc123`), falls back to job id |
 | `error` | TEXT | Error message if failed |
 | `progress` | INTEGER | 0–100 |
 | `duration` | REAL | Video duration in seconds |
@@ -177,10 +179,10 @@ video-transcoder/
 └── data/                    # Default STORAGE_PATH
     ├── transcoder.db        # SQLite database
     └── jobs/
-        └── {uuid}/          # Per-job directory
+        └── {Video Title_abc123}/  # Per-job directory (named after video)
             ├── video.mp4
-            ├── audio.wav
-            └── video.srt
+            ├── audio.wav          # Only if subtitles enabled
+            └── video.srt          # Only if subtitles enabled
 ```
 
 ## Key Design Decisions
@@ -191,7 +193,7 @@ video-transcoder/
 
 3. **Stealth plugin** — Many news sites block headless browsers. The stealth plugin patches navigator properties, WebGL, and other fingerprint vectors.
 
-4. **Job directory isolation** — Each job gets its own directory under `jobs/{uuid}/`. Easy cleanup on delete, no file conflicts.
+4. **Job directory isolation** — Each job gets its own directory under `jobs/`. After download, directories are renamed from UUID to `{video-title}_{short-id}` for easy browsing. Falls back to UUID if rename fails.
 
 5. **Pluggable Whisper** — Python backend is easier to install. C++ backend is faster on CPU-only machines. Config switch, same interface.
 

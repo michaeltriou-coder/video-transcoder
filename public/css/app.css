@@ -159,6 +159,26 @@ h2 {
   flex: 1;
 }
 
+.checkbox-group {
+  margin-bottom: 12px;
+}
+
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.toggle-label input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
 input, select {
   width: 100%;
   padding: 8px 12px;

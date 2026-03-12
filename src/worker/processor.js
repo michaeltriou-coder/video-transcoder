@@ -13,8 +13,34 @@ function updateJob(id, fields) {
   db.prepare(`UPDATE jobs SET ${sets}, updated_at = datetime('now') WHERE id = ?`).run(...values, id);
 }
 
+function sanitizeDirName(name) {
+  return name
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')  // Remove filesystem-unsafe chars
+    .replace(/\s+/g, ' ')                     // Collapse whitespace
+    .trim()
+    .substring(0, 100);                       // Truncate to 100 chars
+}
+
+function renameJobDir(oldDir, videoPath, jobId) {
+  const videoTitle = path.basename(videoPath, path.extname(videoPath));
+  const sanitized = sanitizeDirName(videoTitle);
+  if (!sanitized) return { newDir: oldDir, dirName: null };
+
+  const shortId = jobId.substring(0, 6);
+  const dirName = `${sanitized}_${shortId}`;
+  const newDir = path.join(path.dirname(oldDir), dirName);
+
+  try {
+    fs.renameSync(oldDir, newDir);
+    return { newDir, dirName };
+  } catch (err) {
+    console.log(`[${jobId}] Could not rename job dir: ${err.message}`);
+    return { newDir: oldDir, dirName: null };
+  }
+}
+
 async function processJob(job) {
-  const jobDir = path.join(config.storagePath, 'jobs', job.id);
+  let jobDir = path.join(config.storagePath, 'jobs', job.id);
 
   try {
     // Phase 1: Download
@@ -23,34 +49,46 @@ async function processJob(job) {
     const onStatus = (msg) => updateJob(job.id, { status_message: msg });
     const { path: videoPath, method: downloadMethod } = await download(job.url, jobDir, onStatus);
     console.log(`[${job.id}] Downloaded via: ${downloadMethod}`);
-    updateJob(job.id, { output_path: videoPath, progress: 50, download_method: downloadMethod, status_message: `Downloaded via ${downloadMethod}` });
 
-    // Phase 2: Transcribe (if not disabled)
-    updateJob(job.id, { status: 'transcribing', status_message: 'Extracting audio...' });
-    console.log(`[${job.id}] Extracting audio...`);
-    const audioPath = path.join(jobDir, 'audio.wav');
-    await extractAudio(videoPath, audioPath);
+    // Rename job directory to video title
+    const { newDir, dirName } = renameJobDir(jobDir, videoPath, job.id);
+    jobDir = newDir;
+    const newVideoPath = path.join(jobDir, path.basename(videoPath));
+    const updates = { output_path: newVideoPath, progress: 50, download_method: downloadMethod, status_message: `Downloaded via ${downloadMethod}` };
+    if (dirName) updates.job_dir = dirName;
+    updateJob(job.id, updates);
 
-    updateJob(job.id, { status_message: 'Transcribing with whisper...', progress: 60 });
-    console.log(`[${job.id}] Transcribing...`);
-    let subtitlePath = await transcribe(audioPath, {
-      language: job.language,
-      format: job.format,
-      outputDir: jobDir,
-      jobId: job.id,
-    });
+    // Phase 2: Transcribe (only if extract_subtitles is enabled)
+    let subtitlePath = null;
+    if (job.extract_subtitles) {
+      updateJob(job.id, { status: 'transcribing', status_message: 'Extracting audio...' });
+      console.log(`[${job.id}] Extracting audio...`);
+      const audioPath = path.join(jobDir, 'audio.wav');
+      await extractAudio(newVideoPath, audioPath);
 
-    updateJob(job.id, { status_message: 'Finalizing subtitles...', progress: 90 });
+      updateJob(job.id, { status_message: 'Transcribing with whisper...', progress: 60 });
+      console.log(`[${job.id}] Transcribing...`);
+      subtitlePath = await transcribe(audioPath, {
+        language: job.language,
+        format: job.format,
+        outputDir: jobDir,
+        jobId: job.id,
+      });
 
-    // Rename subtitle to match video filename
-    const videoBaseName = path.basename(videoPath, path.extname(videoPath));
-    const finalSubPath = path.join(jobDir, `${videoBaseName}.${job.format}`);
-    if (subtitlePath !== finalSubPath) {
-      fs.renameSync(subtitlePath, finalSubPath);
-      subtitlePath = finalSubPath;
+      updateJob(job.id, { status_message: 'Finalizing subtitles...', progress: 90 });
+
+      // Rename subtitle to match video filename
+      const videoBaseName = path.basename(newVideoPath, path.extname(newVideoPath));
+      const finalSubPath = path.join(jobDir, `${videoBaseName}.${job.format}`);
+      if (subtitlePath !== finalSubPath) {
+        fs.renameSync(subtitlePath, finalSubPath);
+        subtitlePath = finalSubPath;
+      }
+    } else {
+      console.log(`[${job.id}] Skipping transcription (extract_subtitles disabled)`);
     }
 
-    const duration = getVideoDuration(videoPath);
+    const duration = getVideoDuration(newVideoPath);
 
     updateJob(job.id, {
       status: 'completed',

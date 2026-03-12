@@ -22,7 +22,7 @@ const VALID_LANGUAGES = [
 
 // POST /api/jobs — create new job
 router.post('/', (req, res) => {
-  const { url, webhook, language, format } = req.body;
+  const { url, webhook, language, format, extract_subtitles } = req.body;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url is required' });
@@ -48,11 +48,13 @@ router.post('/', (req, res) => {
   const jobDir = path.join(config.storagePath, 'jobs', id);
   fs.mkdirSync(jobDir, { recursive: true });
 
+  const extractSubs = extract_subtitles ? 1 : 0;
+
   const stmt = db.prepare(`
-    INSERT INTO jobs (id, url, language, format, webhook_url)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO jobs (id, url, language, format, webhook_url, extract_subtitles)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(id, url.trim(), lang, fmt, webhook || null);
+  stmt.run(id, url.trim(), lang, fmt, webhook || null, extractSubs);
 
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
   res.status(201).json(job);
@@ -93,7 +95,8 @@ router.delete('/:id', (req, res) => {
 
   db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
 
-  const jobDir = path.join(config.storagePath, 'jobs', req.params.id);
+  const dirName = job.job_dir || req.params.id;
+  const jobDir = path.join(config.storagePath, 'jobs', dirName);
   fs.rmSync(jobDir, { recursive: true, force: true });
 
   res.json({ message: 'Job deleted' });
