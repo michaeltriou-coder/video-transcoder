@@ -99,12 +99,18 @@ async function scrapeWithBrowser(pageUrl, { timeout = 30000 } = {}) {
       });
 
       // Check iframes for embedded video players (general detection, no hardcoded platforms)
+      // Skip known non-video iframes (ads, consent, analytics, social widgets)
+      const nonVideoPatterns = /imasdk\.googleapis|doubleclick|googlesyndication|googletagmanager|privacy-mgmt|consent|onetrust|didomi|facebook\.com\/plugins\/(?!video)|platform\.twitter|disqus/i;
+
       document.querySelectorAll('iframe').forEach(iframe => {
         const src = iframe.src || iframe.dataset?.src;
         if (!src || src === 'about:blank' || src.startsWith('javascript:')) return;
 
         try {
           const iframeUrl = new URL(src, window.location.href);
+
+          // Skip known non-video iframes
+          if (nonVideoPatterns.test(src)) return;
 
           // Detect embed/player patterns in URL path (used by most video platforms)
           const hasEmbedPattern = /\/(embed|player|video)\b/i.test(iframeUrl.pathname);

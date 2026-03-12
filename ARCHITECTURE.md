@@ -11,7 +11,7 @@ Video Transcoder is a single-process Node.js service with an embedded SQLite dat
 │  ├── REST API (src/routes/jobs.js)                   │
 │  └── Worker thread (src/worker/queue.js)             │
 │       └── Processor (src/worker/processor.js)        │
-│            ├── Downloader (3 tiers)                  │
+│            ├── Downloader (2 tiers)                  │
 │            ├── Audio extractor (ffmpeg)              │
 │            └── Transcriber (Whisper)                 │
 ├──────────────────────────────────────────────────────┤
@@ -42,9 +42,8 @@ Video Transcoder is a single-process Node.js service with an embedded SQLite dat
 |------|------|
 | `src/worker/queue.js` | Polls DB every 2s for pending jobs, respects concurrency limit |
 | `src/worker/processor.js` | Orchestrates download → extract → transcribe pipeline |
-| `src/worker/downloader.js` | 3-tier download chain, returns `{ path, method }` |
-| `src/worker/scraper.js` | Tier 2: Cheerio static HTML scraper |
-| `src/worker/scraper-browser.js` | Tier 3: Playwright headless browser scraper |
+| `src/worker/downloader.js` | 2-tier download chain, returns `{ path, method }` |
+| `src/worker/scraper-browser.js` | Tier 2: Playwright headless browser scraper |
 | `src/worker/transcriber.js` | Router — dispatches to Python or C++ backend |
 | `src/worker/whisper-python.js` | Spawns `whisper` CLI |
 | `src/worker/whisper-cpp.js` | Spawns whisper.cpp binary |
@@ -79,7 +78,7 @@ User submits URL (UI or API)
                                ┌──────────┼──────────┐
                                ▼          ▼          ▼
                           Download   Extract    Transcribe
-                          (3-tier)   (ffmpeg)   (Whisper)
+                          (2-tier)   (ffmpeg)   (Whisper)
                                │          │          │
                                └──────────┼──────────┘
                                           │
@@ -99,26 +98,19 @@ downloader.download(url)
     │
     ├─ Tier 1: yt-dlp
     │  Spawns yt-dlp process with --playlist-items 1
-    │  Works for YouTube, Twitter, Vimeo, TikTok, 1000+ sites
+    │  Works for YouTube, Twitter, Vimeo, TikTok, 1800+ sites
     │  ✓ return { path, method: 'yt-dlp' }
     │  ✗ fall through ──►
     │
-    ├─ Tier 2: scraper.js (Cheerio)
-    │  HTTP GET → parse HTML → search for video URLs:
-    │    og:video meta, <video>/<source>, JSON-LD,
-    │    twitter:player, iframe embeds, inline scripts
-    │  Priority-weighted, deduplicated
-    │  ✓ return { path, method: 'cheerio' }
-    │  ✗ fall through ──►
-    │
-    └─ Tier 3: scraper-browser.js (Playwright)
+    └─ Tier 2: scraper-browser.js (Playwright)
        Launch headless Chromium with stealth plugin
        ├── Network interception (content-type + URL patterns)
        ├── Cookie consent dismissal
        ├── Scroll triggers for lazy-loaded players
        ├── Play button click attempts
        └── DOM inspection (video/source/iframe/og:video)
-       Prefers m3u8/mpd manifests over direct mp4
+       Returns ordered URL list: embeds first → manifests → streams
+       Each URL tried via yt-dlp, then direct download as fallback
        ✓ return { path, method: 'playwright' }
 ```
 
@@ -136,7 +128,7 @@ Single `jobs` table:
 | `webhook_url` | TEXT | Optional callback URL |
 | `output_path` | TEXT | Path to downloaded video file |
 | `subtitle_path` | TEXT | Path to generated subtitle file |
-| `download_method` | TEXT | `yt-dlp`, `cheerio`, or `playwright` |
+| `download_method` | TEXT | `yt-dlp` or `playwright` |
 | `status_message` | TEXT | Detailed phase description (e.g. "Transcribing with whisper...") |
 | `error` | TEXT | Error message if failed |
 | `progress` | INTEGER | 0–100 |
@@ -170,9 +162,8 @@ video-transcoder/
 │   └── worker/
 │       ├── queue.js          # Job polling + concurrency
 │       ├── processor.js      # Pipeline orchestrator
-│       ├── downloader.js     # 3-tier download chain
-│       ├── scraper.js        # Tier 2: Cheerio HTML scraper
-│       ├── scraper-browser.js# Tier 3: Playwright browser scraper
+│       ├── downloader.js     # 2-tier download chain
+│       ├── scraper-browser.js# Tier 2: Playwright browser scraper
 │       ├── transcriber.js    # Whisper backend router
 │       ├── whisper-python.js # Python whisper CLI wrapper
 │       ├── whisper-cpp.js    # whisper.cpp binary wrapper
@@ -196,7 +187,7 @@ video-transcoder/
 
 1. **No external queue** — SQLite + polling is simpler to deploy and debug than Redis/RabbitMQ. WAL mode handles concurrent reads/writes.
 
-2. **3-tier download fallback** — yt-dlp covers most sites. Cheerio handles simple news sites without spawning a browser. Playwright is the expensive last resort.
+2. **2-tier download fallback** — yt-dlp covers most sites natively (1800+ extractors). Playwright handles everything else by scraping the page for video URLs, preferring iframe embeds (which yt-dlp can then handle) over raw streams.
 
 3. **Stealth plugin** — Many news sites block headless browsers. The stealth plugin patches navigator properties, WebGL, and other fingerprint vectors.
 
