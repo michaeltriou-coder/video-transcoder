@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.4 — 2026-03-13
+
+### Removed
+- Cheerio HTML scraper (Tier 2) — never succeeded in practice since modern sites load videos via JS. Download chain simplified to 2 tiers: yt-dlp → Playwright
+
+### Fixed
+- Non-video iframes (Google IMA ads, consent dialogs, analytics) no longer detected as video embeds — caused HTML files to be downloaded instead of videos (e.g. Sky News)
+- `directDownload` now rejects HTML responses, preventing HTML pages from being saved as "video" files
+
 ## v0.3.3 — 2026-03-13
 
 ### Fixed

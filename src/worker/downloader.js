@@ -1,7 +1,6 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const { scrapeVideoUrl } = require('./scraper');
 const { scrapeWithBrowser } = require('./scraper-browser');
 
 function ytdlp(url, outputDir) {
@@ -78,55 +77,40 @@ async function download(url, outputDir, onStatus) {
     const filePath = await ytdlp(url, outputDir);
     return { path: filePath, method: 'yt-dlp' };
   } catch (ytdlpError) {
-    console.log(`[downloader] yt-dlp failed, trying scraper fallback...`);
-    report(`yt-dlp failed, trying cheerio scraper...`);
+    console.log(`[downloader] yt-dlp failed, trying Playwright...`);
+    report('yt-dlp failed, trying Playwright browser...');
 
-    // Tier 2: Cheerio HTML scraper (static HTML parsing)
-    let scrapedUrl;
+    // Tier 2: Playwright headless browser (JS-rendered / bot-protected sites)
+    let browserUrls;
     try {
-      scrapedUrl = await scrapeVideoUrl(url);
-      console.log(`[downloader] Scraped video URL: ${scrapedUrl}`);
-      report('Downloading scraped URL...');
-      const filePath = await downloadWithUrl(scrapedUrl, outputDir);
-      return { path: filePath, method: 'cheerio' };
-    } catch (scrapeError) {
-      console.log(`[downloader] Cheerio scraper failed, trying Playwright...`);
-      report('Cheerio failed, trying Playwright browser...');
-
-      // Tier 3: Playwright headless browser (JS-rendered / bot-protected sites)
-      let browserUrls;
-      try {
-        browserUrls = await scrapeWithBrowser(url);
-      } catch (browserError) {
-        throw new Error(
-          `All download methods failed:\n` +
-          `  yt-dlp: ${ytdlpError.message}\n` +
-          `  Scraper: ${scrapeError.message}\n` +
-          `  Browser: ${browserError.message}`
-        );
-      }
-
-      // Try each browser-found URL in order (embeds first, then streams)
-      let lastBrowserError;
-      for (const browserUrl of browserUrls) {
-        try {
-          console.log(`[downloader] Trying browser URL: ${browserUrl}`);
-          report(`Trying browser URL...`);
-          const filePath = await downloadWithUrl(browserUrl, outputDir);
-          return { path: filePath, method: 'playwright' };
-        } catch (err) {
-          lastBrowserError = err;
-          console.log(`[downloader] Browser URL failed: ${err.message}`);
-        }
-      }
-
+      browserUrls = await scrapeWithBrowser(url);
+    } catch (browserError) {
       throw new Error(
         `All download methods failed:\n` +
         `  yt-dlp: ${ytdlpError.message}\n` +
-        `  Scraper: ${scrapeError.message}\n` +
-        `  Browser: ${lastBrowserError?.message || 'No URLs found'}`
+        `  Browser: ${browserError.message}`
       );
     }
+
+    // Try each browser-found URL in order (embeds first, then streams)
+    let lastBrowserError;
+    for (const browserUrl of browserUrls) {
+      try {
+        console.log(`[downloader] Trying browser URL: ${browserUrl}`);
+        report(`Trying browser URL...`);
+        const filePath = await downloadWithUrl(browserUrl, outputDir);
+        return { path: filePath, method: 'playwright' };
+      } catch (err) {
+        lastBrowserError = err;
+        console.log(`[downloader] Browser URL failed: ${err.message}`);
+      }
+    }
+
+    throw new Error(
+      `All download methods failed:\n` +
+      `  yt-dlp: ${ytdlpError.message}\n` +
+      `  Browser: ${lastBrowserError?.message || 'No URLs found'}`
+    );
   }
 }
 
@@ -141,6 +125,12 @@ async function directDownload(url, outputDir) {
 
   if (!res.ok) {
     throw new Error(`Direct download failed: ${res.status} ${res.statusText}`);
+  }
+
+  // Reject HTML responses — we want video, not web pages
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    throw new Error('Direct download returned HTML, not video');
   }
 
   // Determine filename from URL or content-disposition
