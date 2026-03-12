@@ -20,8 +20,9 @@ async function processJob(job) {
     // Phase 1: Download
     updateJob(job.id, { status: 'downloading', started_at: new Date().toISOString() });
     console.log(`[${job.id}] Downloading: ${job.url}`);
-    const videoPath = await download(job.url, jobDir);
-    updateJob(job.id, { output_path: videoPath, progress: 50 });
+    const { path: videoPath, method: downloadMethod } = await download(job.url, jobDir);
+    console.log(`[${job.id}] Downloaded via: ${downloadMethod}`);
+    updateJob(job.id, { output_path: videoPath, progress: 50, download_method: downloadMethod });
 
     // Phase 2: Transcribe (if not disabled)
     updateJob(job.id, { status: 'transcribing' });

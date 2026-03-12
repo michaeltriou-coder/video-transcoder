@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.1 — 2026-03-12
+
+### Added
+- Playwright headless browser as 3rd-tier fallback scraper (yt-dlp → Cheerio → Playwright)
+- Network interception captures video URLs from JS-rendered pages
+- DOM inspection for dynamically loaded video elements, iframes, and og:video meta
+- Cookie consent auto-dismissal (Didomi, OneTrust, etc.)
+- Scroll-to-view and play button click for lazy-loaded video players
+- Stealth plugin (`playwright-extra` + `puppeteer-extra-plugin-stealth`) for bot-protected sites
+- Download method badge in job UI (yt-dlp / cheerio / playwright)
+- `download_method` column in jobs database
+
+### Fixed
+- yt-dlp downloading multiple videos on sites with embedded playlists (`--playlist-items 1`)
+
 ## v0.2.0 — 2026-03-12
 - Video scraper fallback when yt-dlp fails (news sites support)
 - Scrapes og:video, video/source tags, JSON-LD, Twitter cards, iframe embeds, inline script URLs

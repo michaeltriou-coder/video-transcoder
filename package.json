@@ -1,6 +1,6 @@
 {
   "name": "video-transcoder",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "",
   "main": "server.js",
   "scripts": {
@@ -16,6 +16,9 @@
     "cheerio": "^1.2.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "playwright": "^1.58.2",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "uuid": "^13.0.0"
   }
 }
