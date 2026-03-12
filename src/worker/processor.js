@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const { download } = require('./downloader');
 const { transcribe } = require('./transcriber');
@@ -29,11 +30,19 @@ async function processJob(job) {
     await extractAudio(videoPath, audioPath);
 
     console.log(`[${job.id}] Transcribing...`);
-    const subtitlePath = await transcribe(audioPath, {
+    let subtitlePath = await transcribe(audioPath, {
       language: job.language,
       format: job.format,
       outputDir: jobDir,
     });
+
+    // Rename subtitle to match video filename
+    const videoBaseName = path.basename(videoPath, path.extname(videoPath));
+    const finalSubPath = path.join(jobDir, `${videoBaseName}.${job.format}`);
+    if (subtitlePath !== finalSubPath) {
+      fs.renameSync(subtitlePath, finalSubPath);
+      subtitlePath = finalSubPath;
+    }
 
     const duration = getVideoDuration(videoPath);
 
