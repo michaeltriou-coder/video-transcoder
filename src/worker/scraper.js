@@ -141,7 +141,8 @@ function extractUrlsFromText(text, candidates) {
 }
 
 function isEmbedUrl(url) {
-  return /youtube\.com\/embed|player\.vimeo\.com|dailymotion\.com\/embed|facebook\.com\/plugins\/video/i.test(url);
+  // General detection: look for common embed/player patterns in URL path
+  return /\/(embed|player|video)\b/i.test(url);
 }
 
 function normalizeEmbedUrl(url) {
