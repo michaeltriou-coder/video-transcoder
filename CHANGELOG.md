@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.3 — 2026-03-13
+
+### Fixed
+- Browser scraper now prefers iframe embed URLs over raw stream URLs (m3u8/mp4), letting yt-dlp handle embedded videos natively (e.g. Dailymotion on Euronews)
+- Removed hardcoded platform list from iframe detection — now uses general heuristics (`/embed/`, `/player/`, `/video/` patterns + cross-origin size check)
+- Cheerio scraper iframe detection also generalized (same pattern-based approach)
+
+### Changed
+- Browser scraper returns ordered list of candidate URLs (embeds first, then manifests, then others)
+- Downloader tries each browser-found URL in sequence with automatic fallback
+
 ## v0.3.2 — 2026-03-12
 
 ### Added

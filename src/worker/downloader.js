@@ -94,9 +94,9 @@ async function download(url, outputDir, onStatus) {
       report('Cheerio failed, trying Playwright browser...');
 
       // Tier 3: Playwright headless browser (JS-rendered / bot-protected sites)
-      let browserUrl;
+      let browserUrls;
       try {
-        browserUrl = await scrapeWithBrowser(url);
+        browserUrls = await scrapeWithBrowser(url);
       } catch (browserError) {
         throw new Error(
           `All download methods failed:\n` +
@@ -106,10 +106,26 @@ async function download(url, outputDir, onStatus) {
         );
       }
 
-      console.log(`[downloader] Browser found video URL: ${browserUrl}`);
-      report('Downloading browser-scraped URL...');
-      const filePath = await downloadWithUrl(browserUrl, outputDir);
-      return { path: filePath, method: 'playwright' };
+      // Try each browser-found URL in order (embeds first, then streams)
+      let lastBrowserError;
+      for (const browserUrl of browserUrls) {
+        try {
+          console.log(`[downloader] Trying browser URL: ${browserUrl}`);
+          report(`Trying browser URL...`);
+          const filePath = await downloadWithUrl(browserUrl, outputDir);
+          return { path: filePath, method: 'playwright' };
+        } catch (err) {
+          lastBrowserError = err;
+          console.log(`[downloader] Browser URL failed: ${err.message}`);
+        }
+      }
+
+      throw new Error(
+        `All download methods failed:\n` +
+        `  yt-dlp: ${ytdlpError.message}\n` +
+        `  Scraper: ${scrapeError.message}\n` +
+        `  Browser: ${lastBrowserError?.message || 'No URLs found'}`
+      );
     }
   }
 }

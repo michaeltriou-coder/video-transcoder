@@ -98,11 +98,27 @@ async function scrapeWithBrowser(pageUrl, { timeout = 30000 } = {}) {
         if (url) results.push({ url, source: 'dom:og:video' });
       });
 
-      // Check iframes for embedded players
+      // Check iframes for embedded video players (general detection, no hardcoded platforms)
       document.querySelectorAll('iframe').forEach(iframe => {
         const src = iframe.src || iframe.dataset?.src;
-        if (src && /youtube|vimeo|dailymotion|brightcove|jwplatform/.test(src)) {
-          results.push({ url: src, source: 'dom:iframe-embed' });
+        if (!src || src === 'about:blank' || src.startsWith('javascript:')) return;
+
+        try {
+          const iframeUrl = new URL(src, window.location.href);
+
+          // Detect embed/player patterns in URL path (used by most video platforms)
+          const hasEmbedPattern = /\/(embed|player|video)\b/i.test(iframeUrl.pathname);
+
+          // Cross-origin iframes that are reasonably sized (not tracking pixels or ads)
+          const isCrossOrigin = iframeUrl.origin !== window.location.origin;
+          const rect = iframe.getBoundingClientRect();
+          const isReasonableSize = rect.width > 200 && rect.height > 100;
+
+          if (hasEmbedPattern || (isCrossOrigin && isReasonableSize)) {
+            results.push({ url: src, source: 'dom:iframe-embed' });
+          }
+        } catch {
+          // Invalid URL, skip
         }
       });
 
@@ -130,9 +146,29 @@ async function scrapeWithBrowser(pageUrl, { timeout = 30000 } = {}) {
     console.log(`[browser-scraper] Found ${unique.length} video candidates:`);
     unique.forEach(c => console.log(`  [${c.source}] ${c.url}`));
 
-    // Prefer m3u8/mpd manifests over direct mp4 (better quality selection for yt-dlp)
-    const manifest = unique.find(c => /\.(m3u8|mpd)(\?|$)/i.test(c.url));
-    return manifest ? manifest.url : unique[0].url;
+    // Build ordered list: embed URLs first (yt-dlp handles these natively),
+    // then manifests, then everything else by priority
+    const result = [];
+    const used = new Set();
+
+    // 1. Iframe embed URLs — yt-dlp can handle these with its 1800+ extractors
+    unique.filter(c => c.source === 'dom:iframe-embed').forEach(c => {
+      result.push(c.url);
+      used.add(c.url);
+    });
+
+    // 2. m3u8/mpd manifests (good for yt-dlp quality selection)
+    unique.filter(c => !used.has(c.url) && /\.(m3u8|mpd)(\?|$)/i.test(c.url)).forEach(c => {
+      result.push(c.url);
+      used.add(c.url);
+    });
+
+    // 3. Everything else by priority
+    unique.filter(c => !used.has(c.url)).forEach(c => {
+      result.push(c.url);
+    });
+
+    return result;
   } finally {
     if (browser) {
       await browser.close().catch(() => {});
