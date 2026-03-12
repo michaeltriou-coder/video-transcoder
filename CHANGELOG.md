@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.2 — 2026-03-12
+
+### Added
+- Detailed job status messages on each card (e.g. "Downloading with yt-dlp...", "Extracting audio...", "Transcribing with whisper...")
+- Elapsed time counter on active job cards
+- Stop Whisper button during transcription phase
+- Download tier fallback reporting in real-time (shows which tier is being tried)
+- Whisper process state tracking (`whisper-state.js`) for stop functionality
+- `/api/whisper/status` and `/api/whisper/stop` endpoints
+
+### Changed
+- Default theme switched to dark mode
+- Progress bar now has finer granularity: 0% → 50% (downloaded) → 60% (transcribing) → 90% (finalizing) → 100%
+
 ## v0.3.1 — 2026-03-12
 
 ### Added

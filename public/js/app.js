@@ -3,7 +3,7 @@ let pollTimer = null;
 
 // Theme
 function initTheme() {
-  const saved = localStorage.getItem('theme') || 'light';
+  const saved = localStorage.getItem('theme') || 'dark';
   document.documentElement.setAttribute('data-theme', saved);
   updateThemeButton(saved);
 }
@@ -84,6 +84,9 @@ function renderJobs(jobs) {
           <span class="job-url">${escapeHtml(truncateUrl(job.url))}</span>
           <span class="job-status status-${job.status}">${job.status}</span>
         </div>
+        ${isActive && job.status_message ? `
+          <div class="job-status-message">${escapeHtml(job.status_message)}</div>
+        ` : ''}
         ${isActive && job.progress > 0 ? `
           <div class="progress-bar">
             <div class="progress-bar-fill" style="width: ${job.progress}%"></div>
@@ -93,6 +96,7 @@ function renderJobs(jobs) {
         <div class="job-meta">
           ${timeAgo} &middot; ${job.language} &middot; ${job.format}
           ${job.duration ? ` &middot; ${job.duration.toFixed(1)}s` : ''}
+          ${isActive && job.started_at ? ` &middot; elapsed ${formatElapsed(job.started_at)}` : ''}
           ${job.download_method ? ` &middot; <span class="download-method method-${job.download_method}">${job.download_method}</span>` : ''}
         </div>
         <div class="job-actions">
@@ -100,6 +104,7 @@ function renderJobs(jobs) {
             <button onclick="downloadFile('${job.id}', 'video')">Download Video</button>
             ${job.subtitle_path ? `<button onclick="downloadFile('${job.id}', 'subtitle')">Download Subtitles</button>` : ''}
           ` : ''}
+          ${job.status === 'transcribing' ? `<button class="btn-stop" onclick="stopWhisper()">Stop Whisper</button>` : ''}
           ${job.status === 'failed' ? `<button onclick="retryJob('${job.id}')">Retry</button>` : ''}
           <button class="btn-danger" onclick="deleteJob('${job.id}')">Delete</button>
         </div>
@@ -140,6 +145,15 @@ function formatTime(isoStr) {
   return date.toLocaleString();
 }
 
+function formatElapsed(isoStr) {
+  if (!isoStr) return '';
+  const seconds = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes}m ${secs}s`;
+}
+
 // Filter change
 document.getElementById('status-filter').addEventListener('change', loadJobs);
 
@@ -152,6 +166,17 @@ async function loadVersion() {
     document.getElementById('version-tooltip').textContent = data.changelog;
   } catch (err) {
     console.error('Failed to load version:', err);
+  }
+}
+
+// Stop whisper
+async function stopWhisper() {
+  if (!confirm('Stop Whisper transcription?')) return;
+  try {
+    await fetch('/api/whisper/stop', { method: 'POST' });
+    loadJobs();
+  } catch (err) {
+    alert('Failed to stop Whisper');
   }
 }
 

@@ -5,6 +5,7 @@ const config = require('./src/config');
 const db = require('./src/db');
 const jobsRouter = require('./src/routes/jobs');
 const { startWorker } = require('./src/worker/queue');
+const whisperState = require('./src/worker/whisper-state');
 
 const app = express();
 const pkg = require('./package.json');
@@ -18,6 +19,15 @@ app.get('/api/version', (req, res) => {
 });
 
 app.use('/api/jobs', jobsRouter);
+
+app.get('/api/whisper/status', (req, res) => {
+  res.json(whisperState.getStatus());
+});
+
+app.post('/api/whisper/stop', (req, res) => {
+  const stopped = whisperState.stop();
+  res.json({ stopped });
+});
 
 app.use((err, req, res, _next) => {
   console.error(err.stack);

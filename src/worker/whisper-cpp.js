@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('../config');
 
-function transcribeCpp(audioPath, options = {}) {
+function transcribeCpp(audioPath, options = {}, whisperState = null) {
   return new Promise((resolve, reject) => {
     const outputDir = options.outputDir || path.dirname(audioPath);
     const format = options.format || 'srt';
@@ -27,6 +27,7 @@ function transcribeCpp(audioPath, options = {}) {
     ];
 
     const proc = spawn(binaryPath, args);
+    if (whisperState) whisperState.setActive(proc, options.jobId);
     let stderr = '';
 
     proc.stderr.on('data', (data) => {

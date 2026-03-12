@@ -93,6 +93,17 @@ header h1 {
   display: block;
 }
 
+.btn-stop {
+  color: var(--warning) !important;
+  border-color: var(--warning) !important;
+  font-weight: 600;
+}
+
+.btn-stop:hover {
+  background: var(--warning) !important;
+  color: white !important;
+}
+
 #theme-toggle {
   background: none;
   border: 1px solid var(--border);
@@ -242,6 +253,13 @@ button[type="submit"]:disabled {
 [data-theme="dark"] .status-transcribing { background: #451a03; color: #fcd34d; }
 [data-theme="dark"] .status-completed { background: #14532d; color: #86efac; }
 [data-theme="dark"] .status-failed { background: #450a0a; color: #fca5a5; }
+
+.job-status-message {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-style: italic;
+}
 
 .job-meta {
   font-size: 0.8rem;

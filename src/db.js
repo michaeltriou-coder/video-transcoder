@@ -38,6 +38,13 @@ try {
   // Column already exists
 }
 
+// Migration: add status_message column
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN status_message TEXT`);
+} catch {
+  // Column already exists
+}
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
   CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
