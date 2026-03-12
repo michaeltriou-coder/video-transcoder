@@ -7,12 +7,41 @@ const config = require('../config');
 
 const router = express.Router();
 
+const VALID_FORMATS = ['srt', 'vtt'];
+const VALID_LANGUAGES = [
+  'auto', 'af', 'am', 'ar', 'as', 'az', 'ba', 'be', 'bg', 'bn', 'bo', 'br',
+  'bs', 'ca', 'cs', 'cy', 'da', 'de', 'el', 'en', 'es', 'et', 'eu', 'fa',
+  'fi', 'fo', 'fr', 'gl', 'gu', 'ha', 'haw', 'he', 'hi', 'hr', 'ht', 'hu',
+  'hy', 'id', 'is', 'it', 'ja', 'jw', 'ka', 'kk', 'km', 'kn', 'ko', 'la',
+  'lb', 'ln', 'lo', 'lt', 'lv', 'mg', 'mi', 'mk', 'ml', 'mn', 'mr', 'ms',
+  'mt', 'my', 'ne', 'nl', 'nn', 'no', 'oc', 'pa', 'pl', 'ps', 'pt', 'ro',
+  'ru', 'sa', 'sd', 'si', 'sk', 'sl', 'sn', 'so', 'sq', 'sr', 'su', 'sv',
+  'sw', 'ta', 'te', 'tg', 'th', 'tk', 'tl', 'tr', 'tt', 'uk', 'ur', 'uz',
+  'vi', 'yo', 'zh', 'yue',
+];
+
 // POST /api/jobs — create new job
 router.post('/', (req, res) => {
   const { url, webhook, language, format } = req.body;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url is required' });
+  }
+
+  try {
+    new URL(url.trim());
+  } catch {
+    return res.status(400).json({ error: 'url must be a valid URL' });
+  }
+
+  const fmt = format || 'srt';
+  if (!VALID_FORMATS.includes(fmt)) {
+    return res.status(400).json({ error: `format must be one of: ${VALID_FORMATS.join(', ')}` });
+  }
+
+  const lang = language || 'auto';
+  if (!VALID_LANGUAGES.includes(lang)) {
+    return res.status(400).json({ error: `language must be one of: auto, en, el, ... (Whisper language codes)` });
   }
 
   const id = uuidv4();
@@ -23,7 +52,7 @@ router.post('/', (req, res) => {
     INSERT INTO jobs (id, url, language, format, webhook_url)
     VALUES (?, ?, ?, ?, ?)
   `);
-  stmt.run(id, url.trim(), language || 'auto', format || 'srt', webhook || null);
+  stmt.run(id, url.trim(), lang, fmt, webhook || null);
 
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
   res.status(201).json(job);
