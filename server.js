@@ -1,4 +1,5 @@
 const express = require('express');
+const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const config = require('./src/config');
@@ -10,11 +11,13 @@ const whisperState = require('./src/worker/whisper-state');
 const app = express();
 const pkg = require('./package.json');
 
+const changelog = fs.readFileSync(path.join(__dirname, 'CHANGELOG.md'), 'utf-8');
+
+app.use(cors({ origin: config.corsOrigin }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/version', (req, res) => {
-  const changelog = fs.readFileSync(path.join(__dirname, 'CHANGELOG.md'), 'utf-8');
   res.json({ version: pkg.version, changelog });
 });
 

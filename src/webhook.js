@@ -3,11 +3,11 @@ const config = require('./config');
 async function sendWebhook(job) {
   if (!job.webhook_url) return;
 
-  const baseUrl = `http://localhost:${config.port}`;
+  const baseUrl = config.baseUrl.replace(/\/+$/, '');
   const payload = {
     jobId: job.id,
     status: job.status,
-    url: `${baseUrl}/api/jobs/${job.id}/download`,
+    downloadUrl: `${baseUrl}/api/jobs/${job.id}/download`,
     duration: job.duration,
     subtitleUrl: job.subtitle_path
       ? `${baseUrl}/api/jobs/${job.id}/download?type=subtitle`
