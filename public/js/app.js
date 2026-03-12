@@ -31,6 +31,7 @@ document.getElementById('job-form').addEventListener('submit', async (e) => {
     language: document.getElementById('language').value,
     format: document.getElementById('format').value,
     webhook: document.getElementById('webhook').value || undefined,
+    extract_subtitles: document.getElementById('extract-subtitles').checked,
   };
 
   try {

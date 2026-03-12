@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.5 — 2026-03-13
+
+### Added
+- "Extract Subtitles" checkbox in submit form — disabled by default, Whisper only runs when enabled
+- Human-readable job directories — folders named after video title (e.g. `Me at the zoo_dc919f`) instead of UUIDs
+
+### Changed
+- Jobs without subtitle extraction skip audio extraction and Whisper entirely, completing immediately after download
+- `job_dir` column added to database to track renamed folder paths
+
 ## v0.3.4 — 2026-03-13
 
 ### Removed
