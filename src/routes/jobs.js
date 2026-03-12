@@ -95,7 +95,7 @@ router.post('/:id/retry', (req, res) => {
 
   db.prepare(`
     UPDATE jobs SET status = 'pending', error = NULL, progress = 0,
-    started_at = NULL, completed_at = NULL, updated_at = datetime('now')
+    status_message = NULL, started_at = NULL, completed_at = NULL, updated_at = datetime('now')
     WHERE id = ?
   `).run(req.params.id);
 

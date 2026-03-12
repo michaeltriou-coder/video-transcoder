@@ -69,23 +69,29 @@ async function downloadWithUrl(scrapedUrl, outputDir) {
   }
 }
 
-async function download(url, outputDir) {
+async function download(url, outputDir, onStatus) {
+  const report = onStatus || (() => {});
+
   // Tier 1: yt-dlp (handles YouTube, Twitter, Vimeo, etc.)
+  report('Downloading with yt-dlp...');
   try {
     const filePath = await ytdlp(url, outputDir);
     return { path: filePath, method: 'yt-dlp' };
   } catch (ytdlpError) {
     console.log(`[downloader] yt-dlp failed, trying scraper fallback...`);
+    report(`yt-dlp failed, trying cheerio scraper...`);
 
     // Tier 2: Cheerio HTML scraper (static HTML parsing)
     let scrapedUrl;
     try {
       scrapedUrl = await scrapeVideoUrl(url);
       console.log(`[downloader] Scraped video URL: ${scrapedUrl}`);
+      report('Downloading scraped URL...');
       const filePath = await downloadWithUrl(scrapedUrl, outputDir);
       return { path: filePath, method: 'cheerio' };
     } catch (scrapeError) {
       console.log(`[downloader] Cheerio scraper failed, trying Playwright...`);
+      report('Cheerio failed, trying Playwright browser...');
 
       // Tier 3: Playwright headless browser (JS-rendered / bot-protected sites)
       let browserUrl;
@@ -101,6 +107,7 @@ async function download(url, outputDir) {
       }
 
       console.log(`[downloader] Browser found video URL: ${browserUrl}`);
+      report('Downloading browser-scraped URL...');
       const filePath = await downloadWithUrl(browserUrl, outputDir);
       return { path: filePath, method: 'playwright' };
     }

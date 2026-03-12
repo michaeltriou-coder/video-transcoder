@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('../config');
 
-function transcribePython(audioPath, options = {}) {
+function transcribePython(audioPath, options = {}, whisperState = null) {
   return new Promise((resolve, reject) => {
     const outputDir = options.outputDir || path.dirname(audioPath);
     const format = options.format || 'srt';
@@ -22,6 +22,7 @@ function transcribePython(audioPath, options = {}) {
     const proc = spawn(whisperBin, args, {
       env: { ...process.env, PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}` },
     });
+    if (whisperState) whisperState.setActive(proc, options.jobId);
     let stderr = '';
 
     proc.stderr.on('data', (data) => {

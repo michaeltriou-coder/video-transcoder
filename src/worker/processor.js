@@ -18,24 +18,29 @@ async function processJob(job) {
 
   try {
     // Phase 1: Download
-    updateJob(job.id, { status: 'downloading', started_at: new Date().toISOString() });
+    updateJob(job.id, { status: 'downloading', started_at: new Date().toISOString(), status_message: 'Starting download...' });
     console.log(`[${job.id}] Downloading: ${job.url}`);
-    const { path: videoPath, method: downloadMethod } = await download(job.url, jobDir);
+    const onStatus = (msg) => updateJob(job.id, { status_message: msg });
+    const { path: videoPath, method: downloadMethod } = await download(job.url, jobDir, onStatus);
     console.log(`[${job.id}] Downloaded via: ${downloadMethod}`);
-    updateJob(job.id, { output_path: videoPath, progress: 50, download_method: downloadMethod });
+    updateJob(job.id, { output_path: videoPath, progress: 50, download_method: downloadMethod, status_message: `Downloaded via ${downloadMethod}` });
 
     // Phase 2: Transcribe (if not disabled)
-    updateJob(job.id, { status: 'transcribing' });
+    updateJob(job.id, { status: 'transcribing', status_message: 'Extracting audio...' });
     console.log(`[${job.id}] Extracting audio...`);
     const audioPath = path.join(jobDir, 'audio.wav');
     await extractAudio(videoPath, audioPath);
 
+    updateJob(job.id, { status_message: 'Transcribing with whisper...', progress: 60 });
     console.log(`[${job.id}] Transcribing...`);
     let subtitlePath = await transcribe(audioPath, {
       language: job.language,
       format: job.format,
       outputDir: jobDir,
+      jobId: job.id,
     });
+
+    updateJob(job.id, { status_message: 'Finalizing subtitles...', progress: 90 });
 
     // Rename subtitle to match video filename
     const videoBaseName = path.basename(videoPath, path.extname(videoPath));
@@ -53,6 +58,7 @@ async function processJob(job) {
       progress: 100,
       completed_at: new Date().toISOString(),
       duration,
+      status_message: null,
     });
 
     console.log(`[${job.id}] Completed in ${duration.toFixed(1)}s`);
@@ -62,6 +68,7 @@ async function processJob(job) {
       status: 'failed',
       error: err.message,
       completed_at: new Date().toISOString(),
+      status_message: null,
     });
   }
 

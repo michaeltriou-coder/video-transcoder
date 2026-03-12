@@ -48,6 +48,7 @@ Video Transcoder is a single-process Node.js service with an embedded SQLite dat
 | `src/worker/transcriber.js` | Router — dispatches to Python or C++ backend |
 | `src/worker/whisper-python.js` | Spawns `whisper` CLI |
 | `src/worker/whisper-cpp.js` | Spawns whisper.cpp binary |
+| `src/worker/whisper-state.js` | Tracks active Whisper process for stop functionality |
 
 ### 4. Utilities
 
@@ -136,6 +137,7 @@ Single `jobs` table:
 | `output_path` | TEXT | Path to downloaded video file |
 | `subtitle_path` | TEXT | Path to generated subtitle file |
 | `download_method` | TEXT | `yt-dlp`, `cheerio`, or `playwright` |
+| `status_message` | TEXT | Detailed phase description (e.g. "Transcribing with whisper...") |
 | `error` | TEXT | Error message if failed |
 | `progress` | INTEGER | 0–100 |
 | `duration` | REAL | Video duration in seconds |
@@ -173,7 +175,8 @@ video-transcoder/
 │       ├── scraper-browser.js# Tier 3: Playwright browser scraper
 │       ├── transcriber.js    # Whisper backend router
 │       ├── whisper-python.js # Python whisper CLI wrapper
-│       └── whisper-cpp.js    # whisper.cpp binary wrapper
+│       ├── whisper-cpp.js    # whisper.cpp binary wrapper
+│       └── whisper-state.js  # Active Whisper process tracker
 │
 ├── public/
 │   ├── index.html           # Web UI

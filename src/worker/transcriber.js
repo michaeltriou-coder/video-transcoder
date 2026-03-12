@@ -1,15 +1,23 @@
 const config = require('../config');
+const whisperState = require('./whisper-state');
 
 async function transcribe(audioPath, options = {}) {
   const backend = config.whisperBackend;
 
-  if (backend === 'cpp') {
-    const { transcribeCpp } = require('./whisper-cpp');
-    return transcribeCpp(audioPath, options);
+  let result;
+  try {
+    if (backend === 'cpp') {
+      const { transcribeCpp } = require('./whisper-cpp');
+      result = await transcribeCpp(audioPath, options, whisperState);
+    } else {
+      const { transcribePython } = require('./whisper-python');
+      result = await transcribePython(audioPath, options, whisperState);
+    }
+  } finally {
+    whisperState.clear();
   }
 
-  const { transcribePython } = require('./whisper-python');
-  return transcribePython(audioPath, options);
+  return result;
 }
 
 module.exports = { transcribe };
