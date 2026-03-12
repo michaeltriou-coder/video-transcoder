@@ -307,3 +307,18 @@ button[type="submit"]:disabled {
   border-radius: 2px;
   transition: width 0.3s;
 }
+
+.download-method {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.method-yt-dlp { background: #dbeafe; color: #1e40af; }
+.method-cheerio { background: #fef3c7; color: #92400e; }
+.method-playwright { background: #ede9fe; color: #5b21b6; }
+
+[data-theme="dark"] .method-yt-dlp { background: #1e3a5f; color: #93c5fd; }
+[data-theme="dark"] .method-cheerio { background: #451a03; color: #fcd34d; }
+[data-theme="dark"] .method-playwright { background: #2e1065; color: #c4b5fd; }

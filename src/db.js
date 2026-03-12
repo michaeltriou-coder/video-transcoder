@@ -31,6 +31,13 @@ db.exec(`
   )
 `);
 
+// Migration: add download_method column
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN download_method TEXT`);
+} catch {
+  // Column already exists
+}
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
   CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);

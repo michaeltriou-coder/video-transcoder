@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { scrapeVideoUrl } = require('./scraper');
+const { scrapeWithBrowser } = require('./scraper-browser');
 
 function ytdlp(url, outputDir) {
   return new Promise((resolve, reject) => {
@@ -10,6 +11,7 @@ function ytdlp(url, outputDir) {
     const args = [
       '-o', outputTemplate,
       '--no-playlist',
+      '--playlist-items', '1',
       '--print', 'after_move:filepath',
       url,
     ];
@@ -57,29 +59,50 @@ function ytdlp(url, outputDir) {
   });
 }
 
-async function download(url, outputDir) {
-  // Try yt-dlp first
+async function downloadWithUrl(scrapedUrl, outputDir) {
+  // Try yt-dlp with the scraped URL (handles m3u8, etc.)
   try {
-    return await ytdlp(url, outputDir);
+    return await ytdlp(scrapedUrl, outputDir);
+  } catch {
+    // Last resort: direct HTTP download
+    return await directDownload(scrapedUrl, outputDir);
+  }
+}
+
+async function download(url, outputDir) {
+  // Tier 1: yt-dlp (handles YouTube, Twitter, Vimeo, etc.)
+  try {
+    const filePath = await ytdlp(url, outputDir);
+    return { path: filePath, method: 'yt-dlp' };
   } catch (ytdlpError) {
     console.log(`[downloader] yt-dlp failed, trying scraper fallback...`);
 
-    // Fallback: scrape page for video URL
+    // Tier 2: Cheerio HTML scraper (static HTML parsing)
     let scrapedUrl;
     try {
       scrapedUrl = await scrapeVideoUrl(url);
+      console.log(`[downloader] Scraped video URL: ${scrapedUrl}`);
+      const filePath = await downloadWithUrl(scrapedUrl, outputDir);
+      return { path: filePath, method: 'cheerio' };
     } catch (scrapeError) {
-      throw new Error(`yt-dlp failed: ${ytdlpError.message}\nScraper also failed: ${scrapeError.message}`);
-    }
+      console.log(`[downloader] Cheerio scraper failed, trying Playwright...`);
 
-    console.log(`[downloader] Scraped video URL: ${scrapedUrl}`);
+      // Tier 3: Playwright headless browser (JS-rendered / bot-protected sites)
+      let browserUrl;
+      try {
+        browserUrl = await scrapeWithBrowser(url);
+      } catch (browserError) {
+        throw new Error(
+          `All download methods failed:\n` +
+          `  yt-dlp: ${ytdlpError.message}\n` +
+          `  Scraper: ${scrapeError.message}\n` +
+          `  Browser: ${browserError.message}`
+        );
+      }
 
-    // Try yt-dlp with the scraped URL (handles m3u8, etc.)
-    try {
-      return await ytdlp(scrapedUrl, outputDir);
-    } catch {
-      // Last resort: direct HTTP download
-      return await directDownload(scrapedUrl, outputDir);
+      console.log(`[downloader] Browser found video URL: ${browserUrl}`);
+      const filePath = await downloadWithUrl(browserUrl, outputDir);
+      return { path: filePath, method: 'playwright' };
     }
   }
 }

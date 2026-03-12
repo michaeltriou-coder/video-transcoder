@@ -93,6 +93,7 @@ function renderJobs(jobs) {
         <div class="job-meta">
           ${timeAgo} &middot; ${job.language} &middot; ${job.format}
           ${job.duration ? ` &middot; ${job.duration.toFixed(1)}s` : ''}
+          ${job.download_method ? ` &middot; <span class="download-method method-${job.download_method}">${job.download_method}</span>` : ''}
         </div>
         <div class="job-actions">
           ${job.status === 'completed' ? `
