@@ -133,7 +133,10 @@ $out = "$pkg\KTV Downloader.exe"
   "$PSScriptRoot\Launcher.cs"
 if ($LASTEXITCODE -ne 0) { throw "launcher compile failed" }
 
-# --- quick-start + cleanup -------------------------------------------------
+# --- portable launcher shortcut + quick-start + cleanup --------------------
+# A relative-path .cmd (uses %~dp0) so it keeps working wherever the folder is
+# copied — unlike a .lnk shortcut, which bakes in an absolute path and breaks.
+Set-Content -Encoding ASCII "$pkg\Start KTV Downloader.cmd" "@echo off`r`nstart `"`" `"%~dp0KTV Downloader.exe`"`r`n"
 Copy-Item "$PSScriptRoot\QUICKSTART.txt" "$pkg\ΟΔΗΓΙΕΣ.txt" -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $ex -ErrorAction SilentlyContinue
 
