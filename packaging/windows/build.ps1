@@ -137,7 +137,11 @@ if ($LASTEXITCODE -ne 0) { throw "launcher compile failed" }
 # A relative-path .cmd (uses %~dp0) so it keeps working wherever the folder is
 # copied — unlike a .lnk shortcut, which bakes in an absolute path and breaks.
 Set-Content -Encoding ASCII "$pkg\Start KTV Downloader.cmd" "@echo off`r`nstart `"`" `"%~dp0KTV Downloader.exe`"`r`n"
-Copy-Item "$PSScriptRoot\QUICKSTART.txt" "$pkg\ΟΔΗΓΙΕΣ.txt" -ErrorAction SilentlyContinue
+# Greek "ΟΔΗΓΙΕΣ.txt", built from code points so this script stays pure ASCII —
+# Windows PowerShell 5.1 mis-reads non-ASCII .ps1 literals under the ANSI codepage,
+# which previously split the filename into stray args and failed this step.
+$odigies = (-join [char[]](0x039F,0x0394,0x0397,0x0393,0x0399,0x0395,0x03A3)) + '.txt'
+Copy-Item "$PSScriptRoot\QUICKSTART.txt" (Join-Path $pkg $odigies) -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $ex -ErrorAction SilentlyContinue
 
 $size = [math]::Round((Get-ChildItem $pkg -Recurse | Measure-Object Length -Sum).Sum / 1MB)
