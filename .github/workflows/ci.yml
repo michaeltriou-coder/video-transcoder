@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+        env:
+          # We only need the npm packages, not the ~170 MB Chromium binary.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Syntax-check all JS
+        run: git ls-files '*.js' | xargs -r -n1 node --check
+
+      - name: Boot smoke test
+        run: bash .github/scripts/smoke.sh
+
+      - name: Build scripts must be ASCII-only
+        # Windows PowerShell 5.1 reads .ps1 files as the ANSI codepage, so any
+        # non-ASCII literal (e.g. a Greek filename) gets mangled at build time.
+        run: |
+          node -e '
+            const fs = require("fs");
+            let bad = false;
+            for (const f of process.argv.slice(1)) {
+              const b = fs.readFileSync(f);
+              for (let i = 0; i < b.length; i++) {
+                if (b[i] > 127) {
+                  console.error(`${f}: non-ASCII byte 0x${b[i].toString(16)} at offset ${i}`);
+                  bad = true;
+                  break;
+                }
+              }
+            }
+            process.exit(bad ? 1 : 0);
+          ' packaging/windows/*.ps1
+
+      - name: PowerShell scripts parse cleanly
+        shell: pwsh
+        run: |
+          $errs = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path packaging/windows/build.ps1).Path, [ref]$null, [ref]$errs) | Out-Null
+          if ($errs) {
+            $errs | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+          Write-Host "build.ps1 parses cleanly"
