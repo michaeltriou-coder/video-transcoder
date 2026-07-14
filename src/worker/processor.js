@@ -52,15 +52,39 @@ function renameJobDir(oldDir, videoPath, jobId) {
   }
 }
 
-async function processJob(job) {
+// Send the completion/failure webhook. The job may have been deleted while it
+// ran, in which case there is nothing to report.
+async function finalizeWebhook(jobId) {
+  const finalJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
+  if (finalJob) await sendWebhook(finalJob);
+}
+
+async function handlePhaseError(jobId, err) {
+  if (err instanceof JobCancelledError || jobProcesses.isCancelled(jobId)) {
+    // Job was deleted/cancelled mid-run; its row is likely already gone.
+    console.log(`[${jobId}] Cancelled`);
+  } else {
+    console.error(`[${jobId}] Failed: ${err.message}`);
+    updateJob(jobId, {
+      status: 'failed',
+      error: err.message,
+      completed_at: new Date().toISOString(),
+      status_message: null,
+    });
+    await finalizeWebhook(jobId);
+  }
+}
+
+// Phase 1 — Download. The job row has already been claimed (status 'downloading')
+// by the queue. On success, either completes the job (no subtitles) or hands it
+// off to the transcription queue (status 'transcribe_pending').
+async function runDownload(job) {
   let jobDir = path.join(config.storagePath, 'jobs', job.id);
 
   try {
-    // Phase 1: Download
-    updateJob(job.id, { status: 'downloading', started_at: new Date().toISOString(), status_message: 'Starting download...' });
     console.log(`[${job.id}] Downloading: ${job.url}`);
     const onStatus = (msg) => updateJob(job.id, { status_message: msg });
-    const { path: videoPath, method: downloadMethod } = await download(job.url, jobDir, onStatus, job.id, job.quality);
+    const { path: videoPath, method: downloadMethod, moreVideos } = await download(job.url, jobDir, onStatus, job.id, job.quality);
     throwIfCancelled(job.id);
     console.log(`[${job.id}] Downloaded via: ${downloadMethod}`);
 
@@ -70,66 +94,92 @@ async function processJob(job) {
     const newVideoPath = path.join(jobDir, path.basename(videoPath));
     const updates = { output_path: newVideoPath, progress: 50, download_method: downloadMethod, status_message: `Downloaded via ${downloadMethod}` };
     if (dirName) updates.job_dir = dirName;
-    updateJob(job.id, updates);
+    if (moreVideos) updates.more_videos = 1;
 
-    // Phase 2: Transcribe (only if extract_subtitles is enabled)
-    let subtitlePath = null;
     if (job.extract_subtitles) {
-      updateJob(job.id, { status: 'transcribing' });
-
-      // For audio-only jobs there is no video track to strip, so we go straight
-      // to preparing whisper's input. If yt-dlp already handed us a 16 kHz mono
-      // WAV we can feed it to whisper untouched and skip ffmpeg entirely;
-      // otherwise we transcode just the audio to a 16 kHz WAV (fast — no video
-      // demux, and for audio-only jobs no video was ever downloaded).
-      const audioOnly = job.quality === 'audio';
-      let audioPath;
-      if (isWhisperReadyWav(newVideoPath)) {
-        console.log(`[${job.id}] Downloaded audio is already whisper-ready, skipping extraction`);
-        updateJob(job.id, { status_message: 'Audio ready, skipping extraction...' });
-        audioPath = newVideoPath;
-      } else {
-        const msg = audioOnly ? 'Preparing audio...' : 'Extracting audio...';
-        console.log(`[${job.id}] ${msg}`);
-        updateJob(job.id, { status_message: msg });
-        audioPath = path.join(jobDir, 'audio.wav');
-        await extractAudio(newVideoPath, audioPath, job.id);
-      }
-      throwIfCancelled(job.id);
-
-      // Ensure the speech model is present (downloads on first use).
-      if (config.whisperBackend === 'cpp') {
-        const model = config.whisperModel || 'base';
-        updateJob(job.id, { status_message: `Preparing speech model (${model})...` });
-        await ensureModel(model, (pct) => {
-          updateJob(job.id, { status_message: `Downloading speech model (${model}) ${pct}%...` });
-        });
-      }
-
-      updateJob(job.id, { status_message: 'Transcribing with whisper...', progress: 60 });
-      console.log(`[${job.id}] Transcribing...`);
-      subtitlePath = await transcribe(audioPath, {
-        language: job.language,
-        format: job.format,
-        outputDir: jobDir,
-        jobId: job.id,
-      });
-
-      updateJob(job.id, { status_message: 'Finalizing subtitles...', progress: 90 });
-
-      // Rename subtitle to match video filename
-      const videoBaseName = path.basename(newVideoPath, path.extname(newVideoPath));
-      const finalSubPath = path.join(jobDir, `${videoBaseName}.${job.format}`);
-      if (subtitlePath !== finalSubPath) {
-        fs.renameSync(subtitlePath, finalSubPath);
-        subtitlePath = finalSubPath;
-      }
+      // Hand off to the (serial) transcription queue.
+      updates.status = 'transcribe_pending';
+      updates.status_message = 'Queued for transcription...';
+      updateJob(job.id, updates);
+      console.log(`[${job.id}] Queued for transcription`);
     } else {
       console.log(`[${job.id}] Skipping transcription (extract_subtitles disabled)`);
+      const duration = getVideoDuration(newVideoPath);
+      updateJob(job.id, {
+        ...updates,
+        status: 'completed',
+        progress: 100,
+        completed_at: new Date().toISOString(),
+        duration,
+        status_message: null,
+      });
+      console.log(`[${job.id}] Completed in ${duration.toFixed(1)}s`);
+      await finalizeWebhook(job.id);
+    }
+  } catch (err) {
+    await handlePhaseError(job.id, err);
+  } finally {
+    jobProcesses.clearCancelled(job.id);
+  }
+}
+
+// Phase 2 — Transcribe. Runs serially (one whisper at a time). The job row has
+// been claimed (status 'transcribing') by the queue; output_path points at the
+// already-downloaded video/audio.
+async function runTranscribe(job) {
+  const videoPath = job.output_path;
+  const jobDir = path.dirname(videoPath);
+
+  try {
+    // For audio-only jobs there is no video track to strip, so we go straight
+    // to preparing whisper's input. If yt-dlp already handed us a 16 kHz mono
+    // WAV we can feed it to whisper untouched and skip ffmpeg entirely;
+    // otherwise we transcode just the audio to a 16 kHz WAV (fast — no video
+    // demux, and for audio-only jobs no video was ever downloaded).
+    const audioOnly = job.quality === 'audio';
+    let audioPath;
+    if (isWhisperReadyWav(videoPath)) {
+      console.log(`[${job.id}] Downloaded audio is already whisper-ready, skipping extraction`);
+      updateJob(job.id, { status_message: 'Audio ready, skipping extraction...' });
+      audioPath = videoPath;
+    } else {
+      const msg = audioOnly ? 'Preparing audio...' : 'Extracting audio...';
+      console.log(`[${job.id}] ${msg}`);
+      updateJob(job.id, { status_message: msg });
+      audioPath = path.join(jobDir, 'audio.wav');
+      await extractAudio(videoPath, audioPath, job.id);
+    }
+    throwIfCancelled(job.id);
+
+    // Ensure the speech model is present (downloads on first use).
+    if (config.whisperBackend === 'cpp') {
+      const model = config.whisperModel || 'base';
+      updateJob(job.id, { status_message: `Preparing speech model (${model})...` });
+      await ensureModel(model, (pct) => {
+        updateJob(job.id, { status_message: `Downloading speech model (${model}) ${pct}%...` });
+      });
     }
 
-    const duration = getVideoDuration(newVideoPath);
+    updateJob(job.id, { status_message: 'Transcribing with whisper...', progress: 60 });
+    console.log(`[${job.id}] Transcribing...`);
+    let subtitlePath = await transcribe(audioPath, {
+      language: job.language,
+      format: job.format,
+      outputDir: jobDir,
+      jobId: job.id,
+    });
 
+    updateJob(job.id, { status_message: 'Finalizing subtitles...', progress: 90 });
+
+    // Rename subtitle to match video filename
+    const videoBaseName = path.basename(videoPath, path.extname(videoPath));
+    const finalSubPath = path.join(jobDir, `${videoBaseName}.${job.format}`);
+    if (subtitlePath !== finalSubPath) {
+      fs.renameSync(subtitlePath, finalSubPath);
+      subtitlePath = finalSubPath;
+    }
+
+    const duration = getVideoDuration(videoPath);
     updateJob(job.id, {
       status: 'completed',
       subtitle_path: subtitlePath,
@@ -138,29 +188,13 @@ async function processJob(job) {
       duration,
       status_message: null,
     });
-
     console.log(`[${job.id}] Completed in ${duration.toFixed(1)}s`);
+    await finalizeWebhook(job.id);
   } catch (err) {
-    if (err instanceof JobCancelledError || jobProcesses.isCancelled(job.id)) {
-      // Job was deleted/cancelled mid-run; its row is likely already gone.
-      console.log(`[${job.id}] Cancelled`);
-    } else {
-      console.error(`[${job.id}] Failed: ${err.message}`);
-      updateJob(job.id, {
-        status: 'failed',
-        error: err.message,
-        completed_at: new Date().toISOString(),
-        status_message: null,
-      });
-    }
+    await handlePhaseError(job.id, err);
   } finally {
     jobProcesses.clearCancelled(job.id);
   }
-
-  // Send webhook regardless of success/failure — but the job may have been
-  // deleted while it ran, in which case there is nothing to report.
-  const finalJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(job.id);
-  if (finalJob) await sendWebhook(finalJob);
 }
 
-module.exports = { processJob };
+module.exports = { runDownload, runTranscribe };

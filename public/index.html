@@ -13,7 +13,10 @@
       <span id="version-badge" class="version-badge"></span>
       <div id="version-tooltip" class="version-tooltip"></div>
     </div>
-    <button id="theme-toggle" title="Toggle dark mode">🌙</button>
+    <div class="header-actions">
+      <button id="models-btn" title="Speech models">Models</button>
+      <button id="theme-toggle" title="Toggle dark mode">🌙</button>
+    </div>
   </header>
 
   <main>
@@ -23,23 +26,13 @@
         <div class="form-group">
           <label for="url">Video URL</label>
           <input type="url" id="url" name="url" placeholder="https://example.com/video.mp4" required>
+          <button type="button" id="scan-btn" class="secondary-btn">🔍 Scan page for videos</button>
         </div>
         <div class="form-group checkbox-group">
           <label class="toggle-label">
             <input type="checkbox" id="extract-subtitles" name="extract_subtitles">
             <span>Extract Subtitles</span>
           </label>
-        </div>
-        <div id="model-panel" class="model-panel">
-          <div class="model-panel-header">
-            <span class="model-panel-title">Speech model</span>
-            <span id="model-backend" class="model-backend"></span>
-          </div>
-          <div id="model-list" class="model-list"></div>
-          <div id="model-progress" class="model-progress" hidden>
-            <div class="model-progress-label"></div>
-            <div class="progress-bar"><div class="progress-bar-fill"></div></div>
-          </div>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -93,6 +86,7 @@
             <option value="">All</option>
             <option value="pending">Pending</option>
             <option value="downloading">Downloading</option>
+            <option value="transcribe_pending">Queued (transcribe)</option>
             <option value="transcribing">Transcribing</option>
             <option value="completed">Completed</option>
             <option value="failed">Failed</option>
@@ -102,6 +96,47 @@
       <div id="jobs-list"></div>
     </section>
   </main>
+
+  <div id="model-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Speech models">
+      <div class="modal-header">
+        <h2>Speech Models</h2>
+        <button type="button" id="model-modal-close" class="modal-close" title="Close">✕</button>
+      </div>
+      <div id="model-panel" class="model-panel">
+        <div class="model-panel-header">
+          <span class="model-panel-title">Speech model</span>
+          <span id="model-backend" class="model-backend"></span>
+        </div>
+        <div id="model-list" class="model-list"></div>
+        <div id="model-progress" class="model-progress" hidden>
+          <div class="model-progress-label"></div>
+          <div class="progress-bar"><div class="progress-bar-fill"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="scan-status" class="scan-status" hidden>
+    <span class="spinner"></span>
+    <span class="scan-status-text">Scanning page for videos…</span>
+  </div>
+
+  <div id="scan-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Videos found on page">
+      <div class="modal-header">
+        <h2>Videos on Page</h2>
+        <button type="button" id="scan-modal-close" class="modal-close" title="Close">✕</button>
+      </div>
+      <div id="scan-body"></div>
+      <div id="scan-footer" class="scan-footer" hidden>
+        <label class="scan-selectall">
+          <input type="checkbox" id="scan-select-all"> Select all
+        </label>
+        <button type="button" id="scan-download-btn">Download selected</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/js/app.js"></script>
 </body>

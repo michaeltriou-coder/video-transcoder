@@ -6,6 +6,75 @@ const binaries = require('../binaries');
 const { childEnv, binDir } = require('../paths');
 const jobProcesses = require('./job-processes');
 
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+// --- Site-specific source resolvers ---------------------------------------
+// Some sites (e.g. euronews) host several fixed-resolution mp4 renditions but
+// only advertise the lowest one to yt-dlp's generic extractor. These resolvers
+// inspect the page and return a direct URL for the best tier <= the requested
+// quality, so the quality selector is actually honoured.
+
+async function urlExists(u) {
+  try {
+    const res = await fetch(u, {
+      headers: { 'User-Agent': UA, Range: 'bytes=0-0' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    });
+    return res.status === 200 || res.status === 206;
+  } catch {
+    return false;
+  }
+}
+
+// euronews.com: renditions live at /mp4/<TIER>/<dirs>/<TIER>_<id>.mp4 where
+// TIER is SHD (~404p), HD (720p) or FHD (1080p). Heights are the tier ceilings.
+const EURONEWS_TIERS = [['FHD', 1080], ['HD', 720], ['SHD', 404]];
+
+function euronewsTierOrder(quality) {
+  if (quality === 'audio') return ['SHD', 'HD', 'FHD'];
+  const h = { '480': 480, '720': 720, '1080': 1080 }[quality];
+  if (!h) return ['FHD', 'HD', 'SHD']; // 'best' or unknown
+  const atOrBelow = EURONEWS_TIERS.filter(([, hh]) => hh <= h).map(([t]) => t);
+  const above = EURONEWS_TIERS.filter(([, hh]) => hh > h).map(([t]) => t).reverse();
+  return atOrBelow.length ? [...atOrBelow, ...above] : ['SHD'];
+}
+
+async function resolveEuronews(url, quality, report) {
+  let host;
+  try { host = new URL(url).hostname; } catch { return null; }
+  if (!/(^|\.)euronews\.com$/i.test(host)) return null;
+
+  report('Euronews: resolving best available quality...');
+  let html;
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) return null;
+    html = (await res.text()).replace(/\\\//g, '/'); // undo JSON-escaped slashes
+  } catch {
+    return null;
+  }
+
+  const m = html.match(
+    /https?:\/\/video\.euronews\.com\/mp4\/(?:FHD|HD|SHD)\/([\d/]+)\/(?:FHD|HD|SHD)(_[^"'\s\\]+?\.mp4)/i
+  );
+  if (!m) return null;
+
+  const dirs = m[1];        // e.g. 49/69/34/01
+  const tail = m[2];        // e.g. _PYR_4969341_20260714151525.mp4
+  const buildUrl = (tier) => `https://video.euronews.com/mp4/${tier}/${dirs}/${tier}${tail}`;
+
+  for (const tier of euronewsTierOrder(quality)) {
+    const candidate = buildUrl(tier);
+    if (await urlExists(candidate)) return candidate;
+  }
+  return null;
+}
+
 // Map a quality selection to a yt-dlp -f format string. Returns null for
 // "best" (let yt-dlp pick its default best merge).
 function formatSelector(quality) {
@@ -97,6 +166,20 @@ async function downloadWithUrl(scrapedUrl, outputDir, jobId, quality) {
 async function download(url, outputDir, onStatus, jobId, quality) {
   const report = onStatus || (() => {});
 
+  // Tier 0: site-specific resolvers. yt-dlp's generic extractor would otherwise
+  // grab a low-res rendition on some sites; resolve the best tier ourselves and
+  // hand the direct URL to yt-dlp so quality selection is respected.
+  try {
+    const resolvedUrl = await resolveEuronews(url, quality, report);
+    if (resolvedUrl) {
+      report('Downloading best-quality source...');
+      const filePath = await ytdlp(resolvedUrl, outputDir, jobId, 'best');
+      return { path: filePath, method: 'yt-dlp' };
+    }
+  } catch (resolverErr) {
+    console.log(`[downloader] Site resolver failed, falling back: ${resolverErr.message}`);
+  }
+
   // Tier 1: yt-dlp (handles YouTube, Twitter, Vimeo, etc.)
   report('Downloading with yt-dlp...');
   try {
@@ -125,7 +208,9 @@ async function download(url, outputDir, onStatus, jobId, quality) {
         console.log(`[downloader] Trying browser URL: ${browserUrl}`);
         report(`Trying browser URL...`);
         const filePath = await downloadWithUrl(browserUrl, outputDir, jobId, quality);
-        return { path: filePath, method: 'playwright' };
+        // If the page exposed more than one candidate, hint that a Scan could
+        // surface additional videos (accurate list comes from /api/scan).
+        return { path: filePath, method: 'playwright', moreVideos: browserUrls.length > 1 };
       } catch (err) {
         lastBrowserError = err;
         console.log(`[downloader] Browser URL failed: ${err.message}`);
