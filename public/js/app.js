@@ -30,6 +30,7 @@ document.getElementById('job-form').addEventListener('submit', async (e) => {
     url: document.getElementById('url').value,
     language: document.getElementById('language').value,
     format: document.getElementById('format').value,
+    quality: document.getElementById('quality').value,
     webhook: document.getElementById('webhook').value || undefined,
     extract_subtitles: document.getElementById('extract-subtitles').checked,
   };
@@ -78,6 +79,8 @@ function renderJobs(jobs) {
   container.innerHTML = jobs.map(job => {
     const isActive = ['pending', 'downloading', 'transcribing'].includes(job.status);
     const timeAgo = formatTime(job.created_at);
+    const audioOnly = job.quality === 'audio';
+    const qualityLabel = audioOnly ? 'audio' : (job.quality === 'best' ? 'best' : `${job.quality}p`);
 
     return `
       <div class="job-card" data-id="${job.id}">
@@ -96,13 +99,14 @@ function renderJobs(jobs) {
         ${job.error ? `<div class="job-error">${escapeHtml(job.error)}</div>` : ''}
         <div class="job-meta">
           ${timeAgo} &middot; ${job.language} &middot; ${job.format}
+          ${job.quality ? ` &middot; ${qualityLabel}` : ''}
           ${job.duration ? ` &middot; ${job.duration.toFixed(1)}s` : ''}
           ${isActive && job.started_at ? ` &middot; elapsed ${formatElapsed(job.started_at)}` : ''}
           ${job.download_method ? ` &middot; <span class="download-method method-${job.download_method}">${job.download_method}</span>` : ''}
         </div>
         <div class="job-actions">
           ${job.status === 'completed' ? `
-            <button onclick="downloadFile('${job.id}', 'video')">Download Video</button>
+            <button onclick="downloadFile('${job.id}', 'video')">${audioOnly ? 'Download Audio' : 'Download Video'}</button>
             ${job.subtitle_path ? `<button onclick="downloadFile('${job.id}', 'subtitle')">Download Subtitles</button>` : ''}
           ` : ''}
           ${job.status === 'transcribing' ? `<button class="btn-stop" onclick="stopWhisper()">Stop Whisper</button>` : ''}
@@ -170,6 +174,74 @@ async function loadVersion() {
   }
 }
 
+// Speech model status
+async function loadModelStatus() {
+  try {
+    const res = await fetch('/api/model/status');
+    const data = await res.json();
+    renderModelStatus(data);
+  } catch (err) {
+    console.error('Failed to load model status:', err);
+  }
+}
+
+function renderModelStatus(data) {
+  const backendEl = document.getElementById('model-backend');
+  const listEl = document.getElementById('model-list');
+  const progressEl = document.getElementById('model-progress');
+
+  const backendLabel = data.backend === 'cpp' ? 'whisper.cpp' : data.backend;
+  backendEl.textContent = backendLabel;
+
+  listEl.innerHTML = (data.models || []).map((m) => {
+    const isDefault = m.name === data.default;
+    const size = m.sizeMB ? `${m.sizeMB} MB` : '';
+    const state = m.installed
+      ? `<span class="model-badge installed">✓ installed</span>`
+      : `<button type="button" class="model-download-btn" data-model="${m.name}">Download${size ? ` (${size})` : ''}</button>`;
+    const sizeNote = m.installed && size ? `<span class="model-size">${size}</span>` : '';
+    return `
+      <div class="model-row${isDefault ? ' is-default' : ''}">
+        <span class="model-name">${m.name}${isDefault ? ' <span class="model-default-tag">default</span>' : ''}</span>
+        <span class="model-row-right">${sizeNote}${state}</span>
+      </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.model-download-btn').forEach((btn) => {
+    btn.addEventListener('click', () => downloadModel(btn.dataset.model));
+  });
+
+  const dl = data.downloading;
+  if (dl) {
+    progressEl.hidden = false;
+    const pct = dl.total ? Math.round((dl.downloaded / dl.total) * 100) : 0;
+    const mb = (n) => (n / (1024 * 1024)).toFixed(0);
+    progressEl.querySelector('.model-progress-label').textContent =
+      `Downloading ${dl.model}… ${mb(dl.downloaded)}${dl.total ? ` / ${mb(dl.total)}` : ''} MB`;
+    progressEl.querySelector('.progress-bar-fill').style.width = `${pct}%`;
+  } else {
+    progressEl.hidden = true;
+  }
+}
+
+async function downloadModel(name) {
+  const btn = document.querySelector(`.model-download-btn[data-model="${name}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  try {
+    const res = await fetch('/api/model/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: name }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Download failed');
+  } catch (err) {
+    alert(`Failed to download "${name}": ${err.message}`);
+  } finally {
+    loadModelStatus();
+  }
+}
+
 // Stop whisper
 async function stopWhisper() {
   if (!confirm('Stop Whisper transcription?')) return;
@@ -185,4 +257,8 @@ async function stopWhisper() {
 initTheme();
 loadVersion();
 loadJobs();
-pollTimer = setInterval(loadJobs, 3000);
+loadModelStatus();
+pollTimer = setInterval(() => {
+  loadJobs();
+  loadModelStatus();
+}, 3000);

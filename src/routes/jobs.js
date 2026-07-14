@@ -4,10 +4,26 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const config = require('../config');
+const jobProcesses = require('../worker/job-processes');
 
 const router = express.Router();
 
+// Remove a directory, tolerating Windows file locks that linger briefly after
+// a child process is killed. Retries a few times in the background.
+function removeDirWithRetry(dir, attempt = 0) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (err) {
+    if (attempt >= 5) {
+      console.error(`[jobs] Could not remove ${dir} after retries: ${err.message}`);
+      return;
+    }
+    setTimeout(() => removeDirWithRetry(dir, attempt + 1), 500);
+  }
+}
+
 const VALID_FORMATS = ['srt', 'vtt'];
+const VALID_QUALITIES = ['best', '1080', '720', '480', 'audio'];
 const VALID_LANGUAGES = [
   'auto', 'af', 'am', 'ar', 'as', 'az', 'ba', 'be', 'bg', 'bn', 'bo', 'br',
   'bs', 'ca', 'cs', 'cy', 'da', 'de', 'el', 'en', 'es', 'et', 'eu', 'fa',
@@ -22,7 +38,7 @@ const VALID_LANGUAGES = [
 
 // POST /api/jobs — create new job
 router.post('/', (req, res) => {
-  const { url, webhook, language, format, extract_subtitles } = req.body;
+  const { url, webhook, language, format, quality, extract_subtitles } = req.body;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url is required' });
@@ -44,6 +60,11 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: `language must be one of: auto, en, el, ... (Whisper language codes)` });
   }
 
+  const qual = quality || '1080';
+  if (!VALID_QUALITIES.includes(qual)) {
+    return res.status(400).json({ error: `quality must be one of: ${VALID_QUALITIES.join(', ')}` });
+  }
+
   const id = uuidv4();
   const jobDir = path.join(config.storagePath, 'jobs', id);
   fs.mkdirSync(jobDir, { recursive: true });
@@ -51,10 +72,10 @@ router.post('/', (req, res) => {
   const extractSubs = extract_subtitles ? 1 : 0;
 
   const stmt = db.prepare(`
-    INSERT INTO jobs (id, url, language, format, webhook_url, extract_subtitles)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO jobs (id, url, language, format, quality, webhook_url, extract_subtitles)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(id, url.trim(), lang, fmt, webhook || null, extractSubs);
+  stmt.run(id, url.trim(), lang, fmt, qual, webhook || null, extractSubs);
 
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
   res.status(201).json(job);
@@ -93,11 +114,15 @@ router.delete('/:id', (req, res) => {
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found' });
 
+  // If the job is still running, kill its child processes (yt-dlp / ffmpeg /
+  // whisper) first so they stop writing and release their file handles.
+  jobProcesses.cancel(req.params.id);
+
   db.prepare('DELETE FROM jobs WHERE id = ?').run(req.params.id);
 
   const dirName = job.job_dir || req.params.id;
   const jobDir = path.join(config.storagePath, 'jobs', dirName);
-  fs.rmSync(jobDir, { recursive: true, force: true });
+  removeDirWithRetry(jobDir);
 
   res.json({ message: 'Job deleted' });
 });

@@ -59,6 +59,13 @@ try {
   // Column already exists
 }
 
+// Migration: add quality column (max video resolution to download)
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN quality TEXT NOT NULL DEFAULT '1080'`);
+} catch {
+  // Column already exists
+}
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
   CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);

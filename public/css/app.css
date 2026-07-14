@@ -346,6 +346,121 @@ button[type="submit"]:disabled {
   transition: width 0.3s;
 }
 
+.model-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--bg);
+}
+
+.model-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.model-panel-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.model-backend {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--border);
+  color: var(--text-secondary);
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.model-row.is-default {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.model-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.model-default-tag {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.model-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-size {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.model-badge.installed {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.model-download-btn {
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.model-download-btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+}
+
+.model-download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-progress {
+  margin-top: 10px;
+}
+
+.model-progress-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
 .download-method {
   font-size: 0.7rem;
   padding: 1px 6px;

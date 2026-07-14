@@ -5,6 +5,7 @@ const config = require('../config');
 const binaries = require('../binaries');
 const { childEnv } = require('../paths');
 const { modelPath } = require('./model');
+const jobProcesses = require('./job-processes');
 
 function transcribeCpp(audioPath, options = {}, whisperState = null) {
   return new Promise((resolve, reject) => {
@@ -35,6 +36,7 @@ function transcribeCpp(audioPath, options = {}, whisperState = null) {
     ];
 
     const proc = spawn(binaryPath, args, { env: childEnv() });
+    jobProcesses.register(options.jobId, proc);
     if (whisperState) whisperState.setActive(proc, options.jobId);
     let stderr = '';
 
