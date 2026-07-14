@@ -21,6 +21,10 @@ async function tick() {
   activeJobs++;
   try {
     await processJob(job);
+  } catch (err) {
+    // processJob handles its own failures; this only catches anything that
+    // slips through so the poll loop (setInterval) never sees a rejection.
+    console.error(`[worker] Unexpected error processing job ${job.id}:`, err);
   } finally {
     activeJobs--;
   }

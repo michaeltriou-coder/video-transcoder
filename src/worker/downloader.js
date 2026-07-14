@@ -4,8 +4,22 @@ const fs = require('fs');
 const { scrapeWithBrowser } = require('./scraper-browser');
 const binaries = require('../binaries');
 const { childEnv, binDir } = require('../paths');
+const jobProcesses = require('./job-processes');
 
-function ytdlp(url, outputDir) {
+// Map a quality selection to a yt-dlp -f format string. Returns null for
+// "best" (let yt-dlp pick its default best merge).
+function formatSelector(quality) {
+  // Audio only: grab the best audio-only stream (no video download, no muxing).
+  // Falls back to "best" if the site has no audio-only format.
+  if (quality === 'audio') return 'bestaudio/best';
+
+  const heights = { '1080': 1080, '720': 720, '480': 480 };
+  const h = heights[quality];
+  if (!h) return null; // 'best' or unknown
+  return `bv*[height<=${h}]+ba/b[height<=${h}]/b`;
+}
+
+function ytdlp(url, outputDir, jobId, quality) {
   return new Promise((resolve, reject) => {
     const outputTemplate = path.join(outputDir, '%(title)s.%(ext)s');
 
@@ -14,11 +28,20 @@ function ytdlp(url, outputDir) {
       '--no-playlist',
       '--playlist-items', '1',
       '--ffmpeg-location', binDir,
+      // YouTube (and other sites) now require a JS runtime to solve the player
+      // challenge. Reuse the Node.js that is already running this app — in the
+      // portable build that's the bundled runtime/node.exe (>= v22, as required).
+      '--js-runtimes', `node:${process.execPath}`,
       '--print', 'after_move:filepath',
-      url,
     ];
 
+    const fmt = formatSelector(quality);
+    if (fmt) args.push('-f', fmt);
+
+    args.push(url);
+
     const proc = spawn(binaries.ytdlp(), args, { env: childEnv() });
+    jobProcesses.register(jobId, proc);
     let outputPath = '';
     let stderr = '';
 
@@ -61,23 +84,23 @@ function ytdlp(url, outputDir) {
   });
 }
 
-async function downloadWithUrl(scrapedUrl, outputDir) {
+async function downloadWithUrl(scrapedUrl, outputDir, jobId, quality) {
   // Try yt-dlp with the scraped URL (handles m3u8, etc.)
   try {
-    return await ytdlp(scrapedUrl, outputDir);
+    return await ytdlp(scrapedUrl, outputDir, jobId, quality);
   } catch {
     // Last resort: direct HTTP download
     return await directDownload(scrapedUrl, outputDir);
   }
 }
 
-async function download(url, outputDir, onStatus) {
+async function download(url, outputDir, onStatus, jobId, quality) {
   const report = onStatus || (() => {});
 
   // Tier 1: yt-dlp (handles YouTube, Twitter, Vimeo, etc.)
   report('Downloading with yt-dlp...');
   try {
-    const filePath = await ytdlp(url, outputDir);
+    const filePath = await ytdlp(url, outputDir, jobId, quality);
     return { path: filePath, method: 'yt-dlp' };
   } catch (ytdlpError) {
     console.log(`[downloader] yt-dlp failed, trying Playwright...`);
@@ -101,7 +124,7 @@ async function download(url, outputDir, onStatus) {
       try {
         console.log(`[downloader] Trying browser URL: ${browserUrl}`);
         report(`Trying browser URL...`);
-        const filePath = await downloadWithUrl(browserUrl, outputDir);
+        const filePath = await downloadWithUrl(browserUrl, outputDir, jobId, quality);
         return { path: filePath, method: 'playwright' };
       } catch (err) {
         lastBrowserError = err;

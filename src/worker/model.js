@@ -6,6 +6,9 @@ const { modelsDir } = require('../paths');
 const BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 const KNOWN_MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3'];
 
+// Approximate download sizes (MB), for display only.
+const MODEL_SIZES = { tiny: 75, base: 142, small: 466, medium: 1536, 'large-v3': 3094 };
+
 function modelPath(model) {
   return path.join(modelsDir, `ggml-${model}.bin`);
 }
@@ -17,11 +20,24 @@ function isDownloaded(model) {
 
 let active = null; // { model, downloaded, total }
 
+function fileSizeMB(model) {
+  try {
+    return Math.round(fs.statSync(modelPath(model)).size / (1024 * 1024));
+  } catch {
+    return null;
+  }
+}
+
 function getStatus() {
   return {
     modelsDir,
     downloading: active,
     installed: KNOWN_MODELS.filter(isDownloaded),
+    models: KNOWN_MODELS.map((name) => ({
+      name,
+      installed: isDownloaded(name),
+      sizeMB: isDownloaded(name) ? fileSizeMB(name) : MODEL_SIZES[name] || null,
+    })),
   };
 }
 
@@ -72,4 +88,4 @@ async function ensureModel(model, onProgress) {
   return dest;
 }
 
-module.exports = { ensureModel, isDownloaded, getStatus, modelPath, modelsDir, KNOWN_MODELS };
+module.exports = { ensureModel, isDownloaded, getStatus, modelPath, modelsDir, KNOWN_MODELS, MODEL_SIZES };

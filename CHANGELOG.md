@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.1 — 2026-07-14
+
+### Fixed
+- **YouTube (and other JS-gated sites) extraction** — yt-dlp now requires a JavaScript runtime to solve the player challenge. The already-bundled Node.js runtime is passed via `--js-runtimes node:<node>` (`src/worker/downloader.js`), so no extra binary (e.g. deno) is needed. Previously YouTube failed with `No supported JavaScript runtime could be found`.
+- **Server no longer crashes when a job is deleted mid-run** — deleting an active job now cancels its child processes (yt-dlp / ffmpeg / whisper) via a new process registry (`src/worker/job-processes.js`) and removes its folder with retry (Windows file locks). The worker loop and webhook step are guarded against a since-deleted job, and global `unhandledRejection` / `uncaughtException` handlers keep the server alive.
+
+### Added
+- **Speech-model panel in the UI** — shows the whisper.cpp backend, the default model, which models are installed (with real on-disk size), and a per-model download button with live progress. `GET /api/model/status` now also reports `backend` and `default`.
+- **Video quality selector** — new dropdown (Best / 1080p / 720p / 480p, default 1080p) caps the resolution yt-dlp downloads instead of always grabbing "best" (which can be 4K). Stored as a `quality` column and mapped to a yt-dlp `-f` format string in `src/worker/downloader.js`.
+
 ## v0.4.0 — 2026-07-14
 
 ### Added

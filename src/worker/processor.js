@@ -3,10 +3,22 @@ const fs = require('fs');
 const db = require('../db');
 const { download } = require('./downloader');
 const { transcribe } = require('./transcriber');
-const { getVideoDuration, extractAudio } = require('../utils');
+const { getVideoDuration, extractAudio, isWhisperReadyWav } = require('../utils');
 const { sendWebhook } = require('../webhook');
 const { ensureModel } = require('./model');
+const jobProcesses = require('./job-processes');
 const config = require('../config');
+
+class JobCancelledError extends Error {
+  constructor() {
+    super('Job cancelled');
+    this.name = 'JobCancelledError';
+  }
+}
+
+function throwIfCancelled(jobId) {
+  if (jobProcesses.isCancelled(jobId)) throw new JobCancelledError();
+}
 
 function updateJob(id, fields) {
   const sets = Object.keys(fields).map(k => `${k} = ?`).join(', ');
@@ -48,7 +60,8 @@ async function processJob(job) {
     updateJob(job.id, { status: 'downloading', started_at: new Date().toISOString(), status_message: 'Starting download...' });
     console.log(`[${job.id}] Downloading: ${job.url}`);
     const onStatus = (msg) => updateJob(job.id, { status_message: msg });
-    const { path: videoPath, method: downloadMethod } = await download(job.url, jobDir, onStatus);
+    const { path: videoPath, method: downloadMethod } = await download(job.url, jobDir, onStatus, job.id, job.quality);
+    throwIfCancelled(job.id);
     console.log(`[${job.id}] Downloaded via: ${downloadMethod}`);
 
     // Rename job directory to video title
@@ -62,10 +75,27 @@ async function processJob(job) {
     // Phase 2: Transcribe (only if extract_subtitles is enabled)
     let subtitlePath = null;
     if (job.extract_subtitles) {
-      updateJob(job.id, { status: 'transcribing', status_message: 'Extracting audio...' });
-      console.log(`[${job.id}] Extracting audio...`);
-      const audioPath = path.join(jobDir, 'audio.wav');
-      await extractAudio(newVideoPath, audioPath);
+      updateJob(job.id, { status: 'transcribing' });
+
+      // For audio-only jobs there is no video track to strip, so we go straight
+      // to preparing whisper's input. If yt-dlp already handed us a 16 kHz mono
+      // WAV we can feed it to whisper untouched and skip ffmpeg entirely;
+      // otherwise we transcode just the audio to a 16 kHz WAV (fast — no video
+      // demux, and for audio-only jobs no video was ever downloaded).
+      const audioOnly = job.quality === 'audio';
+      let audioPath;
+      if (isWhisperReadyWav(newVideoPath)) {
+        console.log(`[${job.id}] Downloaded audio is already whisper-ready, skipping extraction`);
+        updateJob(job.id, { status_message: 'Audio ready, skipping extraction...' });
+        audioPath = newVideoPath;
+      } else {
+        const msg = audioOnly ? 'Preparing audio...' : 'Extracting audio...';
+        console.log(`[${job.id}] ${msg}`);
+        updateJob(job.id, { status_message: msg });
+        audioPath = path.join(jobDir, 'audio.wav');
+        await extractAudio(newVideoPath, audioPath, job.id);
+      }
+      throwIfCancelled(job.id);
 
       // Ensure the speech model is present (downloads on first use).
       if (config.whisperBackend === 'cpp') {
@@ -111,18 +141,26 @@ async function processJob(job) {
 
     console.log(`[${job.id}] Completed in ${duration.toFixed(1)}s`);
   } catch (err) {
-    console.error(`[${job.id}] Failed: ${err.message}`);
-    updateJob(job.id, {
-      status: 'failed',
-      error: err.message,
-      completed_at: new Date().toISOString(),
-      status_message: null,
-    });
+    if (err instanceof JobCancelledError || jobProcesses.isCancelled(job.id)) {
+      // Job was deleted/cancelled mid-run; its row is likely already gone.
+      console.log(`[${job.id}] Cancelled`);
+    } else {
+      console.error(`[${job.id}] Failed: ${err.message}`);
+      updateJob(job.id, {
+        status: 'failed',
+        error: err.message,
+        completed_at: new Date().toISOString(),
+        status_message: null,
+      });
+    }
+  } finally {
+    jobProcesses.clearCancelled(job.id);
   }
 
-  // Send webhook regardless of success/failure
+  // Send webhook regardless of success/failure — but the job may have been
+  // deleted while it ran, in which case there is nothing to report.
   const finalJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(job.id);
-  await sendWebhook(finalJob);
+  if (finalJob) await sendWebhook(finalJob);
 }
 
 module.exports = { processJob };

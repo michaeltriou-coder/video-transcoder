@@ -9,6 +9,15 @@ const { startWorker } = require('./src/worker/queue');
 const whisperState = require('./src/worker/whisper-state');
 const model = require('./src/worker/model');
 
+// Safety net: never let a stray error in a background job (worker, webhook,
+// child-process callback) take down the whole server. Log and keep serving.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught exception:', err);
+});
+
 const app = express();
 const pkg = require('./package.json');
 
@@ -34,7 +43,11 @@ app.post('/api/whisper/stop', (req, res) => {
 });
 
 app.get('/api/model/status', (req, res) => {
-  res.json(model.getStatus());
+  res.json({
+    ...model.getStatus(),
+    backend: config.whisperBackend,
+    default: config.whisperModel,
+  });
 });
 
 app.post('/api/model/download', async (req, res) => {

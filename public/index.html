@@ -30,6 +30,17 @@
             <span>Extract Subtitles</span>
           </label>
         </div>
+        <div id="model-panel" class="model-panel">
+          <div class="model-panel-header">
+            <span class="model-panel-title">Speech model</span>
+            <span id="model-backend" class="model-backend"></span>
+          </div>
+          <div id="model-list" class="model-list"></div>
+          <div id="model-progress" class="model-progress" hidden>
+            <div class="model-progress-label"></div>
+            <div class="progress-bar"><div class="progress-bar-fill"></div></div>
+          </div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label for="language">Language</label>
@@ -53,6 +64,16 @@
             <select id="format" name="format">
               <option value="srt">SRT</option>
               <option value="vtt">VTT</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="quality">Video Quality</label>
+            <select id="quality" name="quality">
+              <option value="best">Best available</option>
+              <option value="1080" selected>1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="audio">Audio only</option>
             </select>
           </div>
         </div>
