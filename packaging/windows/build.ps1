@@ -7,7 +7,7 @@
   user: a bundled Node.js runtime, yt-dlp, ffmpeg/ffprobe, whisper.cpp, and Chromium,
   plus a small WinForms launcher (Start / Stop / Status / Open UI).
 
-  The launcher is compiled with the in-box .NET Framework C# compiler (csc.exe) — no
+  The launcher is compiled with the in-box .NET Framework C# compiler (csc.exe) -- no
   .NET SDK is required. Node.js + npm ARE required on the build machine.
 
   Output: dist\KTV Downloader\  (relative to the repo root)
@@ -120,7 +120,7 @@ $env:PLAYWRIGHT_BROWSERS_PATH = "$pkg\browsers"
 & node node_modules/playwright/cli.js install chromium
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "playwright install failed" }
 Pop-Location
-# The app launches headless:true, which uses chromium_headless_shell — drop the full
+# The app launches headless:true, which uses chromium_headless_shell -- drop the full
 # chromium build to save ~400 MB.
 Get-ChildItem "$pkg\browsers" -Directory | Where-Object { $_.Name -like "chromium-*" } |
   Remove-Item -Recurse -Force
@@ -135,11 +135,12 @@ if ($LASTEXITCODE -ne 0) { throw "launcher compile failed" }
 
 # --- portable launcher shortcut + quick-start + cleanup --------------------
 # A relative-path .cmd (uses %~dp0) so it keeps working wherever the folder is
-# copied — unlike a .lnk shortcut, which bakes in an absolute path and breaks.
+# copied -- unlike a .lnk shortcut, which bakes in an absolute path and breaks.
 Set-Content -Encoding ASCII "$pkg\Start KTV Downloader.cmd" "@echo off`r`nstart `"`" `"%~dp0KTV Downloader.exe`"`r`n"
-# Greek "ΟΔΗΓΙΕΣ.txt", built from code points so this script stays pure ASCII —
-# Windows PowerShell 5.1 mis-reads non-ASCII .ps1 literals under the ANSI codepage,
-# which previously split the filename into stray args and failed this step.
+# Greek quick-start filename ("INSTRUCTIONS.txt"), built from Unicode code points so
+# this script stays pure ASCII. Windows PowerShell 5.1 mis-reads non-ASCII .ps1
+# literals under the ANSI codepage, which previously split the filename into stray
+# args and failed this step. Code points: omicron, delta, eta, gamma, iota, epsilon, sigma.
 $odigies = (-join [char[]](0x039F,0x0394,0x0397,0x0393,0x0399,0x0395,0x03A3)) + '.txt'
 Copy-Item "$PSScriptRoot\QUICKSTART.txt" (Join-Path $pkg $odigies) -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $ex -ErrorAction SilentlyContinue
