@@ -27,7 +27,7 @@ const CONSENT_SELECTORS = [
  * Launch a headless browser, navigate to the page, and intercept
  * network requests to find video URLs. Also inspects the rendered DOM.
  */
-async function scrapeWithBrowser(pageUrl, { timeout = 30000 } = {}) {
+async function findVideoCandidates(pageUrl, { timeout = 30000 } = {}) {
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
@@ -152,34 +152,42 @@ async function scrapeWithBrowser(pageUrl, { timeout = 30000 } = {}) {
     console.log(`[browser-scraper] Found ${unique.length} video candidates:`);
     unique.forEach(c => console.log(`  [${c.source}] ${c.url}`));
 
-    // Build ordered list: embed URLs first (yt-dlp handles these natively),
-    // then manifests, then everything else by priority
-    const result = [];
-    const used = new Set();
-
-    // 1. Iframe embed URLs — yt-dlp can handle these with its 1800+ extractors
-    unique.filter(c => c.source === 'dom:iframe-embed').forEach(c => {
-      result.push(c.url);
-      used.add(c.url);
-    });
-
-    // 2. m3u8/mpd manifests (good for yt-dlp quality selection)
-    unique.filter(c => !used.has(c.url) && /\.(m3u8|mpd)(\?|$)/i.test(c.url)).forEach(c => {
-      result.push(c.url);
-      used.add(c.url);
-    });
-
-    // 3. Everything else by priority
-    unique.filter(c => !used.has(c.url)).forEach(c => {
-      result.push(c.url);
-    });
-
-    return result;
+    return unique;
   } finally {
     if (browser) {
       await browser.close().catch(() => {});
     }
   }
+}
+
+/**
+ * Ordered list of candidate URLs (strings) for the download fallback: iframe
+ * embeds first (yt-dlp handles these natively), then manifests, then the rest.
+ */
+async function scrapeWithBrowser(pageUrl, opts) {
+  const unique = await findVideoCandidates(pageUrl, opts);
+
+  const result = [];
+  const used = new Set();
+
+  // 1. Iframe embed URLs — yt-dlp can handle these with its 1800+ extractors
+  unique.filter(c => c.source === 'dom:iframe-embed').forEach(c => {
+    result.push(c.url);
+    used.add(c.url);
+  });
+
+  // 2. m3u8/mpd manifests (good for yt-dlp quality selection)
+  unique.filter(c => !used.has(c.url) && /\.(m3u8|mpd)(\?|$)/i.test(c.url)).forEach(c => {
+    result.push(c.url);
+    used.add(c.url);
+  });
+
+  // 3. Everything else by priority
+  unique.filter(c => !used.has(c.url)).forEach(c => {
+    result.push(c.url);
+  });
+
+  return result;
 }
 
 async function dismissConsent(page) {
@@ -222,4 +230,4 @@ async function tryClickPlay(page) {
   }
 }
 
-module.exports = { scrapeWithBrowser };
+module.exports = { scrapeWithBrowser, findVideoCandidates };

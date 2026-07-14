@@ -88,4 +88,21 @@ async function ensureModel(model, onProgress) {
   return dest;
 }
 
-module.exports = { ensureModel, isDownloaded, getStatus, modelPath, modelsDir, KNOWN_MODELS, MODEL_SIZES };
+// Delete a downloaded model file (and any half-finished .part). Refuses to
+// remove a model that is currently being downloaded.
+function deleteModel(model) {
+  if (active && active.model === model) {
+    throw new Error(`Model "${model}" is currently downloading`);
+  }
+  const p = modelPath(model);
+  let removed = false;
+  if (fs.existsSync(p)) {
+    fs.unlinkSync(p);
+    removed = true;
+  }
+  const part = `${p}.part`;
+  if (fs.existsSync(part)) fs.unlinkSync(part);
+  return removed;
+}
+
+module.exports = { ensureModel, isDownloaded, deleteModel, getStatus, modelPath, modelsDir, KNOWN_MODELS, MODEL_SIZES };

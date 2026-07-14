@@ -20,6 +20,194 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
   updateThemeButton(next);
 });
 
+// Speech model modal
+const modelModal = document.getElementById('model-modal');
+document.getElementById('models-btn').addEventListener('click', () => {
+  modelModal.hidden = false;
+  loadModelStatus();
+});
+document.getElementById('model-modal-close').addEventListener('click', () => {
+  modelModal.hidden = true;
+});
+modelModal.addEventListener('click', (e) => {
+  if (e.target === modelModal) modelModal.hidden = true;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !modelModal.hidden) modelModal.hidden = true;
+});
+
+// Scan page for videos
+const scanModal = document.getElementById('scan-modal');
+let scanResults = [];
+
+document.getElementById('scan-btn').addEventListener('click', scanPage);
+document.getElementById('scan-modal-close').addEventListener('click', () => { scanModal.hidden = true; });
+scanModal.addEventListener('click', (e) => { if (e.target === scanModal) scanModal.hidden = true; });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !scanModal.hidden) scanModal.hidden = true;
+});
+
+let scanning = false;
+
+async function scanPage() {
+  if (scanning) { alert('A scan is already running.'); return; }
+  const url = document.getElementById('url').value.trim();
+  if (!url) { alert('Enter a page URL first.'); return; }
+
+  const btn = document.getElementById('scan-btn');
+  const originalText = btn.textContent;
+  const statusEl = document.getElementById('scan-status');
+  scanning = true;
+  btn.disabled = true;
+  btn.textContent = '🔍 Scanning…';
+  statusEl.querySelector('.scan-status-text').textContent = `Scanning for videos: ${shortUrl(url)}`;
+  statusEl.hidden = false;
+
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Scan failed');
+
+    const result = await pollScan(data.scanId);
+    scanResults = result.videos || [];
+    document.getElementById('scan-footer').hidden = true;
+    scanModal.hidden = false;
+    renderScanResults();
+  } catch (err) {
+    alert(`Scan failed: ${err.message}`);
+  } finally {
+    scanning = false;
+    btn.disabled = false;
+    btn.textContent = originalText;
+    statusEl.hidden = true;
+  }
+}
+
+function shortUrl(url) {
+  try {
+    const u = new URL(url);
+    const p = u.pathname.length > 30 ? u.pathname.slice(0, 27) + '…' : u.pathname;
+    return u.hostname + p;
+  } catch {
+    return url.length > 40 ? url.slice(0, 37) + '…' : url;
+  }
+}
+
+// Poll a background scan until it finishes. The UI stays fully usable meanwhile.
+function pollScan(scanId) {
+  return new Promise((resolve, reject) => {
+    const iv = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/scan/${scanId}`);
+        const s = await res.json();
+        if (!res.ok) throw new Error(s.error || 'Scan lookup failed');
+        if (s.status === 'done') { clearInterval(iv); resolve(s); }
+        else if (s.status === 'error') { clearInterval(iv); reject(new Error(s.error || 'Scan failed')); }
+        // 'running' → keep waiting
+      } catch (err) {
+        clearInterval(iv);
+        reject(err);
+      }
+    }, 1500);
+  });
+}
+
+function renderScanResults() {
+  const body = document.getElementById('scan-body');
+  const footer = document.getElementById('scan-footer');
+
+  if (scanResults.length === 0) {
+    body.innerHTML = `<div class="scan-loading">No downloadable videos found on this page.</div>`;
+    footer.hidden = true;
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="scan-count">Found ${scanResults.length} video${scanResults.length > 1 ? 's' : ''}:</div>
+    <div class="scan-list">
+      ${scanResults.map((v, i) => {
+        const dims = v.width && v.height ? `${v.width}×${v.height}` : (v.kind === 'embed' ? 'embed' : '');
+        const dur = v.durationSec ? formatDuration(v.durationSec) : '';
+        const size = v.sizeMB ? `${v.sizeMB} MB` : '';
+        const meta = [dims, dur, size].filter(Boolean).join(' · ');
+        return `
+          <label class="scan-row">
+            <input type="checkbox" class="scan-check" data-index="${i}" checked>
+            <span class="scan-info">
+              <span class="scan-label">${escapeHtml(v.label)}</span>
+              <span class="scan-meta">${escapeHtml(meta)}</span>
+            </span>
+          </label>`;
+      }).join('')}
+    </div>`;
+
+  footer.hidden = false;
+  document.getElementById('scan-select-all').checked = true;
+  updateScanDownloadLabel();
+
+  body.querySelectorAll('.scan-check').forEach((cb) => {
+    cb.addEventListener('change', updateScanDownloadLabel);
+  });
+}
+
+function updateScanDownloadLabel() {
+  const n = document.querySelectorAll('.scan-check:checked').length;
+  const btn = document.getElementById('scan-download-btn');
+  btn.textContent = n ? `Download selected (${n})` : 'Download selected';
+  btn.disabled = n === 0;
+}
+
+document.getElementById('scan-select-all').addEventListener('change', (e) => {
+  document.querySelectorAll('.scan-check').forEach((cb) => { cb.checked = e.target.checked; });
+  updateScanDownloadLabel();
+});
+
+document.getElementById('scan-download-btn').addEventListener('click', async () => {
+  const checked = [...document.querySelectorAll('.scan-check:checked')].map((cb) => scanResults[+cb.dataset.index]);
+  if (checked.length === 0) return;
+
+  const base = {
+    language: document.getElementById('language').value,
+    format: document.getElementById('format').value,
+    quality: document.getElementById('quality').value,
+    extract_subtitles: document.getElementById('extract-subtitles').checked,
+  };
+
+  const btn = document.getElementById('scan-download-btn');
+  btn.disabled = true;
+  try {
+    for (const v of checked) {
+      await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...base, url: v.url }),
+      });
+    }
+    scanModal.hidden = true;
+    loadJobs();
+  } catch (err) {
+    alert(`Failed to queue downloads: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function scanFromJob(encodedUrl) {
+  document.getElementById('url').value = decodeURIComponent(encodedUrl);
+  scanPage();
+}
+
+function formatDuration(sec) {
+  const s = Math.round(sec);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return m > 0 ? `${m}m ${rem}s` : `${rem}s`;
+}
+
 // Submit form
 document.getElementById('job-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -77,7 +265,8 @@ function renderJobs(jobs) {
   }
 
   container.innerHTML = jobs.map(job => {
-    const isActive = ['pending', 'downloading', 'transcribing'].includes(job.status);
+    const isActive = ['pending', 'downloading', 'transcribe_pending', 'transcribing'].includes(job.status);
+    const statusLabel = job.status === 'transcribe_pending' ? 'queued' : job.status;
     const timeAgo = formatTime(job.created_at);
     const audioOnly = job.quality === 'audio';
     const qualityLabel = audioOnly ? 'audio' : (job.quality === 'best' ? 'best' : `${job.quality}p`);
@@ -86,7 +275,7 @@ function renderJobs(jobs) {
       <div class="job-card" data-id="${job.id}">
         <div class="job-card-header">
           <span class="job-url">${escapeHtml(truncateUrl(job.url))}</span>
-          <span class="job-status status-${job.status}">${job.status}</span>
+          <span class="job-status status-${job.status}">${statusLabel}</span>
         </div>
         ${isActive && job.status_message ? `
           <div class="job-status-message">${escapeHtml(job.status_message)}</div>
@@ -97,6 +286,9 @@ function renderJobs(jobs) {
           </div>
         ` : ''}
         ${job.error ? `<div class="job-error">${escapeHtml(job.error)}</div>` : ''}
+        ${job.more_videos && job.status === 'completed' ? `
+          <div class="job-hint">🔍 This page may have more videos — <button type="button" class="link-btn" onclick="scanFromJob('${encodeURIComponent(job.url)}')">Scan to pick the others</button></div>
+        ` : ''}
         <div class="job-meta">
           ${timeAgo} &middot; ${job.language} &middot; ${job.format}
           ${job.quality ? ` &middot; ${qualityLabel}` : ''}
@@ -194,24 +386,35 @@ function renderModelStatus(data) {
   backendEl.textContent = backendLabel;
 
   listEl.innerHTML = (data.models || []).map((m) => {
-    const isDefault = m.name === data.default;
+    const isSelected = m.name === data.default;
     const size = m.sizeMB ? `${m.sizeMB} MB` : '';
-    const state = m.installed
-      ? `<span class="model-badge installed">✓ installed</span>`
+    const sizeNote = size ? `<span class="model-size">${size}</span>` : '';
+    const actions = m.installed
+      ? `<span class="model-badge installed">✓ installed</span>
+         <button type="button" class="model-delete-btn" data-model="${m.name}" title="Delete model from disk">Delete</button>`
       : `<button type="button" class="model-download-btn" data-model="${m.name}">Download${size ? ` (${size})` : ''}</button>`;
-    const sizeNote = m.installed && size ? `<span class="model-size">${size}</span>` : '';
     return `
-      <div class="model-row${isDefault ? ' is-default' : ''}">
-        <span class="model-name">${m.name}${isDefault ? ' <span class="model-default-tag">default</span>' : ''}</span>
-        <span class="model-row-right">${sizeNote}${state}</span>
-      </div>`;
+      <label class="model-row${isSelected ? ' is-default' : ''}">
+        <span class="model-select">
+          <input type="radio" name="active-model" value="${m.name}"${isSelected ? ' checked' : ''}>
+          <span class="model-name">${m.name}${isSelected ? ' <span class="model-default-tag">selected</span>' : ''}</span>
+        </span>
+        <span class="model-row-right">${m.installed ? sizeNote : ''}${actions}</span>
+      </label>`;
   }).join('');
 
+  listEl.querySelectorAll('input[name="active-model"]').forEach((radio) => {
+    radio.addEventListener('change', () => selectModel(radio.value));
+  });
   listEl.querySelectorAll('.model-download-btn').forEach((btn) => {
     btn.addEventListener('click', () => downloadModel(btn.dataset.model));
   });
+  listEl.querySelectorAll('.model-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteModelFile(btn.dataset.model));
+  });
 
   const dl = data.downloading;
+  document.getElementById('models-btn').classList.toggle('downloading', !!dl);
   if (dl) {
     progressEl.hidden = false;
     const pct = dl.total ? Math.round((dl.downloaded / dl.total) * 100) : 0;
@@ -221,6 +424,39 @@ function renderModelStatus(data) {
     progressEl.querySelector('.progress-bar-fill').style.width = `${pct}%`;
   } else {
     progressEl.hidden = true;
+  }
+}
+
+async function selectModel(name) {
+  try {
+    const res = await fetch('/api/model/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: name }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Selection failed');
+  } catch (err) {
+    alert(`Failed to select "${name}": ${err.message}`);
+  } finally {
+    loadModelStatus();
+  }
+}
+
+async function deleteModelFile(name) {
+  if (!confirm(`Delete the "${name}" model from disk? It will re-download on demand next time it's needed.`)) return;
+  try {
+    const res = await fetch('/api/model/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: name }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Delete failed');
+  } catch (err) {
+    alert(`Failed to delete "${name}": ${err.message}`);
+  } finally {
+    loadModelStatus();
   }
 }
 

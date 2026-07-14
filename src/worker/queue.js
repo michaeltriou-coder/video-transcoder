@@ -1,37 +1,74 @@
 const db = require('../db');
 const config = require('../config');
-const { processJob } = require('./processor');
+const { runDownload, runTranscribe } = require('./processor');
 
-let activeJobs = 0;
+let activeDownloads = 0;
+let activeTranscriptions = 0;
 let pollInterval = null;
 
-function pickNextJob() {
-  return db.prepare(`
-    SELECT * FROM jobs WHERE status = 'pending'
-    ORDER BY created_at ASC LIMIT 1
+// Atomically claim the oldest pending job for downloading. The status flip runs
+// synchronously (better-sqlite3), so a job can't be picked twice across ticks.
+function claimDownload() {
+  const job = db.prepare(`
+    SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1
   `).get();
+  if (!job) return null;
+  db.prepare(`
+    UPDATE jobs SET status = 'downloading',
+      started_at = COALESCE(started_at, datetime('now')),
+      status_message = 'Starting download...',
+      updated_at = datetime('now')
+    WHERE id = ?
+  `).run(job.id);
+  return job;
 }
 
-async function tick() {
-  if (activeJobs >= config.maxConcurrentJobs) return;
+function claimTranscription() {
+  const job = db.prepare(`
+    SELECT * FROM jobs WHERE status = 'transcribe_pending' ORDER BY created_at ASC LIMIT 1
+  `).get();
+  if (!job) return null;
+  db.prepare(`
+    UPDATE jobs SET status = 'transcribing',
+      status_message = 'Preparing transcription...',
+      updated_at = datetime('now')
+    WHERE id = ?
+  `).run(job.id);
+  return job;
+}
 
-  const job = pickNextJob();
-  if (!job) return;
+function tick() {
+  // Fill the download pool (network-bound, parallel).
+  while (activeDownloads < config.maxConcurrentDownloads) {
+    const job = claimDownload();
+    if (!job) break;
+    activeDownloads++;
+    runDownload(job)
+      .catch((err) => console.error(`[worker] download crashed for ${job.id}:`, err))
+      .finally(() => { activeDownloads--; });
+  }
 
-  activeJobs++;
-  try {
-    await processJob(job);
-  } catch (err) {
-    // processJob handles its own failures; this only catches anything that
-    // slips through so the poll loop (setInterval) never sees a rejection.
-    console.error(`[worker] Unexpected error processing job ${job.id}:`, err);
-  } finally {
-    activeJobs--;
+  // Fill the transcription pool (CPU-bound, serial by default).
+  while (activeTranscriptions < config.maxConcurrentTranscriptions) {
+    const job = claimTranscription();
+    if (!job) break;
+    activeTranscriptions++;
+    runTranscribe(job)
+      .catch((err) => console.error(`[worker] transcription crashed for ${job.id}:`, err))
+      .finally(() => { activeTranscriptions--; });
   }
 }
 
+// Reset any jobs left mid-flight by a previous run (e.g. a crash/restart) so
+// they get picked up again instead of being stuck.
+function recoverStuckJobs() {
+  db.prepare(`UPDATE jobs SET status = 'pending' WHERE status = 'downloading'`).run();
+  db.prepare(`UPDATE jobs SET status = 'transcribe_pending' WHERE status = 'transcribing'`).run();
+}
+
 function startWorker() {
-  console.log(`Worker started (max concurrency: ${config.maxConcurrentJobs})`);
+  recoverStuckJobs();
+  console.log(`Worker started (downloads: ${config.maxConcurrentDownloads}, transcriptions: ${config.maxConcurrentTranscriptions})`);
   pollInterval = setInterval(tick, 2000);
 }
 

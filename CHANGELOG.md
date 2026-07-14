@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.0 — 2026-07-14
+
+### Added
+- **Scan a page for all its videos** — new "🔍 Scan page for videos" button and `POST /api/scan`. The Playwright scraper's candidates are each verified (ffprobe for direct media, `yt-dlp -J` for embeds) so interactive graphics/ads are dropped; a modal lists the real videos with resolution/duration/size and checkboxes, and each pick becomes its own job. Scanning runs in the **background** (returns a `scanId`, polled via `GET /api/scan/:id`) with a fixed on-screen spinner, so the UI never blocks on the ~30s crawl (`src/worker/probe.js`, `src/worker/scraper-browser.js` `findVideoCandidates`).
+- **"This page may have more videos" hint** — a job downloaded via Playwright from a page that exposed more than one candidate now shows a Scan shortcut (new `more_videos` column).
+- **Speech-model selector & delete** — the model panel moved into a header **"Models"** modal; each model has a radio to pick the active one (persisted in `data/settings.json`, honoured at job time) and installed models get a **Delete** button. New `POST /api/model/select` and `POST /api/model/delete`; new `src/settings.js`.
+
+### Changed
+- **Parallel downloads, serial transcription** — the worker was split into two pools: downloads run concurrently (default 3, `MAX_CONCURRENT_DOWNLOADS`) while whisper transcription stays serial (default 1, `MAX_CONCURRENT_TRANSCRIPTIONS`). A long transcription no longer blocks new downloads. Jobs flow `pending → downloading → transcribe_pending → transcribing → completed`; interrupted jobs are recovered on startup (`src/worker/queue.js`, `processor.js` `runDownload`/`runTranscribe`).
+
+### Fixed
+- **Euronews quality** — euronews advertises only a low `SHD` rendition to generic extractors while a full-HD `FHD` mp4 exists at a parallel path. A site resolver now picks the best tier ≤ the requested quality (`src/worker/downloader.js`), so 1080p downloads the 1920×1080 source instead of 720×404.
+
 ## v0.4.1 — 2026-07-14
 
 ### Fixed
