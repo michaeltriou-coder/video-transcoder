@@ -5,6 +5,7 @@ const { download } = require('./downloader');
 const { transcribe } = require('./transcriber');
 const { getVideoDuration, extractAudio } = require('../utils');
 const { sendWebhook } = require('../webhook');
+const { ensureModel } = require('./model');
 const config = require('../config');
 
 function updateJob(id, fields) {
@@ -65,6 +66,15 @@ async function processJob(job) {
       console.log(`[${job.id}] Extracting audio...`);
       const audioPath = path.join(jobDir, 'audio.wav');
       await extractAudio(newVideoPath, audioPath);
+
+      // Ensure the speech model is present (downloads on first use).
+      if (config.whisperBackend === 'cpp') {
+        const model = config.whisperModel || 'base';
+        updateJob(job.id, { status_message: `Preparing speech model (${model})...` });
+        await ensureModel(model, (pct) => {
+          updateJob(job.id, { status_message: `Downloading speech model (${model}) ${pct}%...` });
+        });
+      }
 
       updateJob(job.id, { status_message: 'Transcribing with whisper...', progress: 60 });
       console.log(`[${job.id}] Transcribing...`);

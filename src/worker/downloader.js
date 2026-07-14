@@ -2,6 +2,8 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { scrapeWithBrowser } = require('./scraper-browser');
+const binaries = require('../binaries');
+const { childEnv, binDir } = require('../paths');
 
 function ytdlp(url, outputDir) {
   return new Promise((resolve, reject) => {
@@ -11,11 +13,12 @@ function ytdlp(url, outputDir) {
       '-o', outputTemplate,
       '--no-playlist',
       '--playlist-items', '1',
+      '--ffmpeg-location', binDir,
       '--print', 'after_move:filepath',
       url,
     ];
 
-    const proc = spawn('yt-dlp', args);
+    const proc = spawn(binaries.ytdlp(), args, { env: childEnv() });
     let outputPath = '';
     let stderr = '';
 

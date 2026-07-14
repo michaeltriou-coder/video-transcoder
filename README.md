@@ -1,11 +1,13 @@
 # Video Transcoder & Whisper Subtitles
 
-Self-hosted service that downloads videos from any URL, extracts audio, and generates subtitles using OpenAI Whisper. Supports YouTube, news sites, and JS-rendered pages through a 3-tier download fallback system.
+Self-hosted service that downloads videos from any URL, extracts audio, and generates subtitles using OpenAI Whisper. Supports YouTube, news sites, and JS-rendered pages through a 2-tier download fallback system.
 
 ## Features
 
-- **3-tier video download**: yt-dlp → Cheerio HTML scraper → Playwright headless browser
-- **Whisper transcription**: Python (`openai-whisper`) or C++ (`whisper.cpp`) backends
+- **Portable Windows build**: self-contained package with a Start/Stop launcher — the end user installs nothing (see below)
+- **2-tier video download**: yt-dlp → Playwright headless browser
+- **Whisper transcription**: whisper.cpp (default, no Python) or OpenAI Python backend
+- **On-demand speech model**: the whisper model downloads automatically on first subtitle use
 - **SRT/VTT output**: Subtitle files matched to video filename
 - **REST API**: Submit, list, monitor, download, retry, and delete jobs
 - **Web UI**: Dark mode, status filters, progress bars, download method badges
@@ -33,6 +35,22 @@ Open **http://localhost:5000** — paste a video URL, pick language and format, 
 
 See [SETUP.md](SETUP.md) for detailed installation instructions and system requirements.
 
+## Portable Windows Build
+
+For a zero-install, fully portable Windows package: a single folder containing a bundled
+Node.js runtime, yt-dlp, ffmpeg/ffprobe, whisper.cpp, and Chromium, plus a small
+`KTV Downloader.exe` launcher with **Start / Stop / Status** controls. The end user
+downloads and installs nothing — they copy the folder and run the `.exe`.
+
+```powershell
+# from the repo root, on Windows (PowerShell)
+packaging\windows\build.ps1
+```
+
+This produces `dist\KTV Downloader\` (~620 MB). See
+[packaging/windows/README.md](packaging/windows/README.md) for details. The whisper
+speech model is **not** bundled — it downloads on demand (first subtitle job).
+
 ## How It Works
 
 ```
@@ -40,10 +58,9 @@ URL submitted via API/UI
     │
     ▼
 ┌─────────────────────────────┐
-│  Download (3-tier fallback)  │
+│  Download (2-tier fallback)  │
 │  1. yt-dlp (YouTube, etc.)  │
-│  2. Cheerio (static HTML)   │
-│  3. Playwright (JS/iframes) │
+│  2. Playwright (JS/iframes) │
 └─────────────┬───────────────┘
               │
               ▼
@@ -74,6 +91,8 @@ URL submitted via API/UI
 | `GET` | `/api/jobs/:id/download?type=video\|subtitle` | Download output file |
 | `POST` | `/api/jobs/:id/retry` | Retry a failed job |
 | `GET` | `/api/version` | App version and changelog |
+| `GET` | `/api/model/status` | Installed / downloading whisper models |
+| `POST` | `/api/model/download` | Pre-download a whisper model (`{ "model": "base" }`) |
 
 ### Create a job
 
@@ -121,31 +140,36 @@ On completion (success or failure), a POST is sent to the `webhook` URL:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `5000` | Server port |
-| `STORAGE_PATH` | `./data` | Directory for jobs and database |
-| `WHISPER_BACKEND` | `python` | `python` or `cpp` |
-| `WHISPER_MODEL` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large` |
-| `WHISPER_CPP_PATH` | — | Path to whisper.cpp binary (required if backend is `cpp`) |
+| `STORAGE_PATH` | `<root>/data` | Directory for jobs and database |
+| `WHISPER_BACKEND` | `cpp` | `cpp` (whisper.cpp, no Python) or `python` |
+| `WHISPER_MODEL` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large-v3` |
+| `WHISPER_CPP_PATH` | bundled | Path to whisper.cpp binary (auto-resolved from `bin/`) |
 | `MAX_CONCURRENT_JOBS` | `1` | Max parallel jobs |
+| `KTV_ROOT` | — | Portable root; resolves `bin/`, `browsers/`, `models/`, `data/` |
+| `YTDLP_PATH` / `FFMPEG_PATH` / `FFPROBE_PATH` | bundled | Override bundled tool paths |
+
+All variables are optional — the portable launcher sets sensible defaults and resolves
+bundled binaries automatically.
 
 ## Download Tiers
 
 | Tier | Engine | Best for | Speed |
 |------|--------|----------|-------|
 | 1 | **yt-dlp** | YouTube, Twitter/X, Vimeo, TikTok, 1000+ sites | Fast |
-| 2 | **Cheerio** | News sites with `og:video`, `<video>` tags, JSON-LD | Fast |
-| 3 | **Playwright** | JS-rendered pages, iframe embeds, lazy-loaded players | Slower |
+| 2 | **Playwright** | JS-rendered pages, iframe embeds, lazy-loaded players | Slower |
 
-The system tries each tier in order. If tier 1 fails, it falls back to tier 2, then tier 3. The download method is tracked and displayed in the UI.
+The system tries tier 1 first, falling back to tier 2. The download method is tracked and displayed in the UI.
 
 ## Tech Stack
 
 - **Runtime**: Node.js
 - **Web framework**: Express 5
 - **Database**: SQLite via better-sqlite3 (WAL mode)
-- **Video download**: yt-dlp + Cheerio + Playwright
+- **Video download**: yt-dlp + Playwright
 - **Audio processing**: ffmpeg / ffprobe
-- **Transcription**: OpenAI Whisper (Python) or whisper.cpp
+- **Transcription**: whisper.cpp (default) or OpenAI Whisper (Python)
 - **Anti-bot**: playwright-extra + stealth plugin
+- **Packaging**: portable Windows bundle + WinForms launcher (`packaging/windows/`)
 
 ## License
 

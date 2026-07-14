@@ -7,6 +7,7 @@ const db = require('./src/db');
 const jobsRouter = require('./src/routes/jobs');
 const { startWorker } = require('./src/worker/queue');
 const whisperState = require('./src/worker/whisper-state');
+const model = require('./src/worker/model');
 
 const app = express();
 const pkg = require('./package.json');
@@ -30,6 +31,20 @@ app.get('/api/whisper/status', (req, res) => {
 app.post('/api/whisper/stop', (req, res) => {
   const stopped = whisperState.stop();
   res.json({ stopped });
+});
+
+app.get('/api/model/status', (req, res) => {
+  res.json(model.getStatus());
+});
+
+app.post('/api/model/download', async (req, res) => {
+  const name = (req.body && req.body.model) || config.whisperModel;
+  try {
+    const dest = await model.ensureModel(name);
+    res.json({ ok: true, model: name, path: dest });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 app.use((err, req, res, _next) => {

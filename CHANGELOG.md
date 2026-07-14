@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.0 — 2026-07-14
+
+### Added
+- **Portable Windows build** — a self-contained package with a small Start/Stop/Status launcher (`KTV Downloader.exe`). Bundles Node.js, yt-dlp, ffmpeg/ffprobe, whisper.cpp, and Chromium; the end user installs nothing. See `packaging/windows/` (`build.ps1`, `Launcher.cs`).
+- **On-demand speech model download** (`src/worker/model.js`) — the whisper.cpp `ggml-<model>.bin` is fetched from Hugging Face on first subtitle use, with progress reported on the job. New endpoints `GET /api/model/status` and `POST /api/model/download`.
+- **Bundled-binary resolution** (`src/paths.js`, `src/binaries.js`) — yt-dlp / ffmpeg / ffprobe / whisper.cpp are resolved from a bundled `bin/` (via `KTV_ROOT`) or explicit env vars (`YTDLP_PATH`, `FFMPEG_PATH`, `FFPROBE_PATH`, `WHISPER_CPP_PATH`), falling back to `PATH` for dev. Playwright loads Chromium from a bundled `browsers/` via `PLAYWRIGHT_BROWSERS_PATH`.
+
+### Changed
+- Default Whisper backend is now `cpp` (whisper.cpp) — no Python required.
+- `whisper.cpp` invocation uses `-l auto` for language auto-detect (was hardcoded to `en`).
+- `getVideoDuration` uses `execFile` instead of a shell string (safer with paths containing spaces).
+- Child processes (yt-dlp, ffmpeg, whisper) now run with `bin/` prepended to `PATH`; yt-dlp is passed `--ffmpeg-location` so it finds the bundled ffmpeg for muxing.
+
 ## v0.3.5 — 2026-03-13
 
 ### Added
