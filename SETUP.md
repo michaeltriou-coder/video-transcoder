@@ -1,5 +1,34 @@
 # Setup Guide
 
+> **On Windows?** The easiest path is the **portable build** — no manual dependency
+> installation at all. See [Portable Windows Build](#portable-windows-build) below.
+> The sections after it cover a manual/dev install on any OS.
+
+## Portable Windows Build
+
+Produces a single self-contained folder (`dist\KTV Downloader\`, ~620 MB) with a
+bundled Node.js runtime, yt-dlp, ffmpeg/ffprobe, whisper.cpp, and Chromium, plus a
+`KTV Downloader.exe` launcher (Start / Stop / Status / Open UI). The **end user
+installs nothing**.
+
+**To build it** (on a Windows dev machine, from the repo root):
+
+```powershell
+packaging\windows\build.ps1
+```
+
+Requirements on the *build* machine only: Node.js + npm (to run `npm install` and the
+Playwright browser fetch) and internet access. The launcher is compiled with the
+in-box .NET Framework C# compiler (`csc.exe`) — no .NET SDK needed.
+
+**To use it:** copy the `KTV Downloader` folder anywhere, run `KTV Downloader.exe`,
+press **Start**, then **Open UI**. The whisper speech model downloads automatically on
+the first subtitle job (into `models\`); after that it works offline. Requires Windows
+10/11 (64-bit).
+
+See [packaging/windows/README.md](packaging/windows/README.md) for the full layout and
+internals.
+
 ## System Requirements
 
 | Tool | Version | Purpose |
@@ -16,13 +45,16 @@
 pip install openai-whisper
 ```
 
-**Option B — whisper.cpp (faster on CPU, no Python needed)**
+**Option B — whisper.cpp (default; faster on CPU, no Python needed)**
 ```bash
 git clone https://github.com/ggerganov/whisper.cpp
 cd whisper.cpp && make
-# Download a model
+# The app downloads the ggml model on demand, or fetch one manually:
 bash models/download-ggml-model.sh base
 ```
+The app looks for the model at `<models dir>/ggml-<model>.bin` and downloads it
+automatically on first use if missing (see `src/worker/model.js`). Point
+`WHISPER_CPP_PATH` at the built binary (`whisper-cli`, formerly `main`).
 
 ## Installation
 
@@ -91,7 +123,7 @@ Edit `.env` to match your setup:
 ```env
 PORT=5000
 STORAGE_PATH=./data
-WHISPER_BACKEND=python
+WHISPER_BACKEND=cpp
 WHISPER_MODEL=base
 WHISPER_CPP_PATH=
 MAX_CONCURRENT_JOBS=1
@@ -99,11 +131,12 @@ MAX_CONCURRENT_JOBS=1
 
 | Variable | Notes |
 |----------|-------|
-| `STORAGE_PATH` | Where jobs and the database live. Use `./data` for development. |
-| `WHISPER_BACKEND` | `python` uses OpenAI's whisper CLI. `cpp` uses whisper.cpp (set `WHISPER_CPP_PATH`). |
-| `WHISPER_MODEL` | `tiny` is fastest, `large` is most accurate. `base` is a good balance. |
-| `WHISPER_CPP_PATH` | Full path to the `main` binary, e.g. `/home/user/whisper.cpp/main` |
+| `STORAGE_PATH` | Where jobs and the database live. Defaults to `<root>/data`. |
+| `WHISPER_BACKEND` | `cpp` uses whisper.cpp (default, no Python). `python` uses OpenAI's whisper CLI. |
+| `WHISPER_MODEL` | `tiny` is fastest, `large-v3` is most accurate. `base` is a good balance. |
+| `WHISPER_CPP_PATH` | Full path to the `whisper-cli` binary. In the portable build this is auto-resolved from `bin/`. |
 | `MAX_CONCURRENT_JOBS` | Keep at 1 unless you have >16 GB RAM and a GPU. Whisper is memory-heavy. |
+| `YTDLP_PATH` / `FFMPEG_PATH` / `FFPROBE_PATH` | Optional explicit tool paths; otherwise resolved from `bin/` then `PATH`. |
 
 ### 6. Start the server
 

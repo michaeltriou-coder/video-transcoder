@@ -35,6 +35,8 @@ Video Transcoder is a single-process Node.js service with an embedded SQLite dat
 |------|------|
 | `src/db.js` | SQLite connection, schema, migrations |
 | `src/config.js` | Environment config from `.env` |
+| `src/paths.js` | Resolves portable root and `bin/`/`browsers/`/`models/`/`data/` dirs; builds child-process env |
+| `src/binaries.js` | Resolves bundled CLI tools (yt-dlp, ffmpeg, ffprobe, whisper.cpp) with env/PATH fallback |
 
 ### 3. Worker Layer
 
@@ -46,8 +48,9 @@ Video Transcoder is a single-process Node.js service with an embedded SQLite dat
 | `src/worker/scraper-browser.js` | Tier 2: Playwright headless browser scraper |
 | `src/worker/transcriber.js` | Router — dispatches to Python or C++ backend |
 | `src/worker/whisper-python.js` | Spawns `whisper` CLI |
-| `src/worker/whisper-cpp.js` | Spawns whisper.cpp binary |
+| `src/worker/whisper-cpp.js` | Spawns the bundled whisper.cpp binary (`whisper-cli`) |
 | `src/worker/whisper-state.js` | Tracks active Whisper process for stop functionality |
+| `src/worker/model.js` | On-demand `ggml-<model>.bin` download from Hugging Face; `/api/model/*` |
 
 ### 4. Utilities
 
@@ -156,6 +159,8 @@ video-transcoder/
 │
 ├── src/
 │   ├── config.js            # Reads .env into config object
+│   ├── paths.js             # Portable root + bundled dir resolution
+│   ├── binaries.js          # Bundled CLI tool resolution
 │   ├── db.js                # SQLite setup + schema + migrations
 │   ├── utils.js             # ffmpeg/ffprobe helpers
 │   ├── webhook.js           # POST webhook on job completion
@@ -167,9 +172,13 @@ video-transcoder/
 │       ├── downloader.js     # 2-tier download chain
 │       ├── scraper-browser.js# Tier 2: Playwright browser scraper
 │       ├── transcriber.js    # Whisper backend router
+│       ├── model.js          # On-demand whisper model download
 │       ├── whisper-python.js # Python whisper CLI wrapper
 │       ├── whisper-cpp.js    # whisper.cpp binary wrapper
 │       └── whisper-state.js  # Active Whisper process tracker
+│
+├── packaging/
+│   └── windows/             # Portable build: build.ps1, Launcher.cs, app.manifest
 │
 ├── public/
 │   ├── index.html           # Web UI
@@ -198,3 +207,5 @@ video-transcoder/
 5. **Pluggable Whisper** — Python backend is easier to install. C++ backend is faster on CPU-only machines. Config switch, same interface.
 
 6. **Single process** — No microservices, no containers required. One `npm start` runs everything. Suitable for self-hosted / single-machine deployment.
+
+7. **Portable packaging (Windows)** — `packaging/windows/build.ps1` assembles a self-contained folder: bundled Node runtime (`runtime/`), CLI tools (`bin/`), Chromium (`browsers/`), and the app (`app/`). At runtime the launcher sets `KTV_ROOT`, and `src/paths.js` + `src/binaries.js` resolve every dependency from those bundled dirs — the code paths are identical to a dev install, only the binary locations differ. The whisper model is fetched on demand (`src/worker/model.js`) rather than bundled, keeping the package lean.
