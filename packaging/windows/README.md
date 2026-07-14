@@ -28,7 +28,9 @@ Output: `dist\KTV Downloader\` (~620 MB).
      do not ship older 24.x, they carry known CVEs) → `runtime\node.exe`
    - **yt-dlp** (latest) → `bin\`
    - **ffmpeg + ffprobe** (BtbN shared win64, latest) + their DLLs → `bin\`
-   - **whisper.cpp** (`whisper-cli` + ggml/BLAS DLLs) → `bin\`
+   - **whisper.cpp** (`whisper-cli` + ggml/BLAS DLLs) → `bin\`, plus the **MSVC runtime
+     DLLs** it links against (`vcruntime140*.dll`, `msvcp140.dll`, `vcomp140.dll`) so a
+     clean target without the VC++ Redistributable still works
    - **Chromium** via Playwright → `browsers\` (keeps only `chromium_headless_shell`,
      since the app launches `headless: true`; the full `chromium-*` build is deleted to
      save ~400 MB)
@@ -68,7 +70,8 @@ window reliably terminates everything.
 
 ## Notes
 
-- Requires Windows 10/11 (64-bit) on the target machine. No .NET/Python/Node install
-  needed there — the .NET Framework 4.x runtime the launcher uses ships with Windows.
+- Requires Windows 10/11 (64-bit) on the target machine. No .NET/Python/Node/VC++
+  install needed there — the .NET Framework 4.x runtime the launcher uses ships with
+  Windows, and the MSVC runtime DLLs whisper needs are bundled in `bin\`.
 - The `.exe` is unsigned; SmartScreen may warn (*More info → Run anyway*). Code-signing
   is out of scope for this build.

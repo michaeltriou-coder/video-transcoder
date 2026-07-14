@@ -88,6 +88,17 @@ Copy-Item "$wr\whisper.dll" "$pkg\bin\"
 Copy-Item "$wr\ggml*.dll" "$pkg\bin\"
 Copy-Item "$wr\libopenblas.dll" "$pkg\bin\"
 
+# The whisper.cpp binaries link against the MSVC runtime (vcruntime140*, msvcp140,
+# vcomp140 for OpenMP). Bundle those DLLs next to whisper-cli.exe so a clean machine
+# without the VC++ Redistributable still works. (node.exe, ffmpeg and better-sqlite3
+# are self-contained.) These are redistributable per the Visual Studio license.
+$vc = @("msvcp140.dll","vcruntime140.dll","vcruntime140_1.dll","vcomp140.dll")
+foreach ($d in $vc) {
+  $src = Join-Path "$env:WINDIR\System32" $d
+  if (Test-Path $src) { Copy-Item $src "$pkg\bin\" }
+  else { Write-Warning "MSVC runtime DLL not found on build machine: $d (subtitles may fail on a clean target)" }
+}
+
 # --- app source ------------------------------------------------------------
 Write-Host "Copying app source ..."
 $exclude = @("node_modules","data","dist","_build",".git","packaging")
